@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "773163860445",
+    "project_id": "lunchtime-74f54",
+    "storage_bucket": "lunchtime-74f54.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:773163860445:android:b8bdf668699088da457634",
+        "android_client_info": {
+          "package_name": "com.money.money_shift"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgKhk-Lcu3Q-GIhOrsCpqnF4aTMVgiAcY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

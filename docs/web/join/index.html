@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Money Shift 초대</title>
+  <meta name="description" content="Money Shift 매장 초대 — 앱에서 바로 참여하거나 스토어에서 설치하세요." />
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, sans-serif;
+      background: #fff; color: #191F28;
+      display: flex; min-height: 100vh; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      max-width: 420px; width: 100%;
+      border: 1px solid #E5E8EB; border-radius: 16px; padding: 28px 24px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.06);
+    }
+    h1 { font-size: 1.35rem; margin: 0 0 8px; }
+    p { margin: 0 0 12px; line-height: 1.5; color: #4E5968; font-size: .95rem; }
+    .code {
+      font-size: 1.5rem; font-weight: 800; letter-spacing: .08em;
+      margin: 16px 0 20px; word-break: break-all;
+    }
+    .btn {
+      display: block; width: 100%; box-sizing: border-box; text-align: center;
+      padding: 14px 16px; border-radius: 12px; font-weight: 700; text-decoration: none;
+      margin-bottom: 10px; border: 1px solid #E5E8EB; color: #191F28; background: #fff;
+    }
+    .btn.primary { background: #212529; color: #fff; border-color: #212529; }
+    .hint { font-size: .8rem; color: #8B95A1; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Money Shift 매장 초대</h1>
+    <p>아래 코드로 앱에서 매장에 참여할 수 있습니다.</p>
+    <div class="code" id="codeLabel">—</div>
+    <a class="btn primary" id="openApp" href="#">앱에서 열기</a>
+    <a class="btn" id="storeBtn" href="#">앱 설치하기</a>
+    <p class="hint">앱이 설치되어 있으면 자동으로 열리고, 없으면 스토어로 이동합니다.</p>
+  </div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var code = (params.get('code') || '').trim().toUpperCase();
+      // /join/CODE path support
+      if (!code) {
+        var parts = location.pathname.split('/').filter(Boolean);
+        if (parts.length >= 2 && parts[0] === 'join') code = parts[1].toUpperCase();
+      }
+
+      var packageId = 'com.money.money_shift';
+      var play = 'https://play.google.com/store/apps/details?id=' + packageId;
+      var appStore = 'https://apps.apple.com/app/id0000000000'; // TODO: App Store ID
+      var custom = 'moneyshift://join?code=' + encodeURIComponent(code);
+      var httpsLink = 'https://moneyshift.app/join?code=' + encodeURIComponent(code);
+
+      document.getElementById('codeLabel').textContent = code || '(코드 없음)';
+
+      var ua = navigator.userAgent || '';
+      var isAndroid = /Android/i.test(ua);
+      var isIOS = /iPhone|iPad|iPod/i.test(ua);
+      var store = isIOS ? appStore : play;
+      document.getElementById('storeBtn').href = store;
+
+      var openBtn = document.getElementById('openApp');
+      openBtn.href = custom;
+
+      function tryOpenApp() {
+        if (!code) {
+          location.replace(store);
+          return;
+        }
+        // 앱 시도 → 짧은 지연 후 스토어 (미설치 시)
+        var start = Date.now();
+        window.location.href = custom;
+        setTimeout(function () {
+          // 앱으로 전환되면 이 탭은 백그라운드 — 스토어로 가지 않음
+          if (document.hidden || document.webkitHidden) return;
+          if (Date.now() - start < 2200) {
+            location.replace(store);
+          }
+        }, 1600);
+      }
+
+      openBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        tryOpenApp();
+      });
+
+      // 모바일에서 자동 시도 (메신저 인앱 브라우저는 사용자 탭이 더 안전)
+      if (code && (isAndroid || isIOS) && !/KAKAOTALK|FBAN|FBAV|Instagram/i.test(ua)) {
+        setTimeout(tryOpenApp, 400);
+      }
+    })();
+  </script>
+</body>
+</html>

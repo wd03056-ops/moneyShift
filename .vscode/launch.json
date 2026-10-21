@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "money_shift",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": [
+        "--dart-define=KAKAO_API_KEY=fef775404815e4adb31c151c1274f46f"
+      ]
+    },
+    {
+      "name": "money_shift (profile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "profile",
+      "toolArgs": [
+        "--dart-define=KAKAO_API_KEY=fef775404815e4adb31c151c1274f46f"
+      ]
+    },
+    {
+      "name": "money_shift (release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "release",
+      "toolArgs": [
+        "--dart-define=KAKAO_API_KEY=fef775404815e4adb31c151c1274f46f"
+      ]
+    }
+  ]
+}

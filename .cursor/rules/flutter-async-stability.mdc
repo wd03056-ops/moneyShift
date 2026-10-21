@@ -1,0 +1,41 @@
+---
+description: Flutter 비동기·날짜·dispose 안정성 규칙
+alwaysApply: true
+---
+
+# Flutter 안정성 (async / DateTime / dispose)
+
+## 1. 비동기 후 setState
+
+`await` 이후 UI를 갱신하기 전에 반드시 확인한다.
+
+```dart
+final result = await someAsync();
+if (!mounted) return;          // State
+// 또는
+if (!context.mounted) return;  // 콜백·Stateless
+setState(() { ... });
+```
+
+showDialog / showModalBottomSheet / Navigator.push / showTimePicker /
+showDatePicker / GPS / HTTP 모두 동일.
+
+## 2. GPS·권한
+
+- 권한 거부·서비스 꺼짐·타임아웃은 throw로 앱을 죽이지 말고
+  사용자 메시지로 반환하거나 catch한다.
+- `getCurrentPosition`에 `timeLimit`을 두고 `TimeoutException`을 처리한다.
+
+## 3. 날짜 연산
+
+- 달력 일 단위 이동은 `Duration(days: 1)` 대신
+  `DateTime(y, m, d + 1)` 또는 `DateOnly.nextDay`를 쓴다.
+- 월말·윤년은 `DateTime(year, month + 1, 0)` / `DateOnly.daysInMonth`로 처리.
+- 긴 기간 루프는 `maxDays` 가드를 둔다.
+
+## 4. dispose
+
+`TextEditingController` / `PageController` / `TabController` /
+`ScrollController` / `FocusNode` / `http.Client` 등은
+해당 State의 `dispose()`에서 반드시 해제한다.
+다이얼로그에서만 만든 컨트롤러도 닫을 때 dispose한다.

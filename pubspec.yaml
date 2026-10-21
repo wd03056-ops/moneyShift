@@ -1,0 +1,79 @@
+name: money_shift
+description: "소상공인 사장·알바생 근무 일정 및 출퇴근/급여 관리 앱"
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Firebase
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
+  firebase_messaging: ^15.2.10
+  flutter_local_notifications: ^19.4.0
+
+  # GPS 출퇴근 인증
+  geolocator: ^14.0.2
+
+  # 로컬 저장소 (오프라인/캐시)
+  shared_preferences: ^2.5.3
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # 유틸
+  intl: ^0.20.2
+  uuid: ^4.5.1
+  equatable: ^2.0.7
+  http: ^1.4.0
+  table_calendar: ^3.2.1
+
+  # 초대 HTTPS / 커스텀 스킴 딥링크
+  app_links: ^6.4.0
+  kakao_flutter_sdk_user: ^2.0.1
+  flutter_svg: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+# geolocator → geolocator_linux → package_info_plus 가 AGP9에서 깨짐.
+# Linux 스텁으로 교체해 Android 등록을 막음 (앱은 모바일 전용).
+dependency_overrides:
+  geolocator_linux:
+    path: packages/geolocator_linux_stub
+
+flutter:
+  uses-material-design: true
+
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/Pretendard-Thin.ttf
+          weight: 100
+        - asset: assets/fonts/Pretendard-ExtraLight.ttf
+          weight: 200
+        - asset: assets/fonts/Pretendard-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Pretendard-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Pretendard-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Pretendard-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Pretendard-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Pretendard-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Pretendard-Black.ttf
+          weight: 900

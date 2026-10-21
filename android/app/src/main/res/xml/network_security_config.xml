@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Play 정책: 평문(HTTP) 트래픽 차단 — HTTPS(TLS)만 허용
+  Firebase / Kakao / 앱 링크 모두 HTTPS 사용
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

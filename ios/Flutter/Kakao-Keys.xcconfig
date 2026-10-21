@@ -1,0 +1,4 @@
+// 카카오 네이티브 앱 키 (디버그·릴리즈 공통)
+// Info.plist URL Scheme: kakao$(KAKAO_NATIVE_APP_KEY)
+// Android kakao.properties / Dart KakaoConfig 와 동일
+KAKAO_NATIVE_APP_KEY=f180fab248825101fa969428a27827e8

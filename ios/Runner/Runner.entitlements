@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 카카오 로그인은 Info.plist URL Scheme / LSApplicationQueriesSchemes 가 핵심.
+	     Universal Links(초대 딥링크) 사용 시 아래 Associated Domains 를 활성화하세요. -->
+	<!--
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:moneyshift.app</string>
+	</array>
+	-->
+</dict>
+</plist>

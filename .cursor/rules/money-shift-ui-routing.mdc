@@ -1,0 +1,39 @@
+---
+description: Money Shift 핵심 UI·라우팅 규칙 (탭/요약/싱글탑/Filled CTA)
+alwaysApply: true
+---
+
+# Money Shift — 핵심 UI·라우팅 (파괴 금지)
+
+이 규칙은 **되돌리거나 단순화하지 않는다.** 관련 화면을 수정할 때 반드시 유지한다.
+
+## 1. 사장 방 상세 탭 · 근무표 뷰 전환
+
+- 하단 NavigationBar: **[직원목록] – [근무표] – [설정]** (3탭 고정).
+- 근무표 탭(index 1) 선택 시 AppBar 우측 **리스트 뷰 / 달력 뷰** IconButton 토글 유지.
+- 구현: `RoomDetailScreen`의 `_scheduleCalendarView` → `OwnerScheduleTab(calendarView:)`.
+- 직원 대시보드 탭([출퇴근]–[내 근무표]–[급여·정보])과 혼동해 사장 탭을 바꾸지 말 것.
+- `isAdminDashboard`는 **owner만** (manager는 직원 UI).
+
+## 2. 배정 카드 일정 요약 (`formatScheduleSummary`)
+
+- 경로: `lib/features/schedules/utils/schedule_summary_formatter.dart`
+- **동일 출퇴근 시각**은 추가 배정·기간 배정을 합쳐 다시 패턴 분석. 개별 `+N개 더보기` 나열 금지.
+  - 요일 규칙 ≥80%: `매주 월·목·일 | 09:00~18:00 (총 N일)`
+  - 규칙+추가: `매주 목·일 (12회) + 10/3` (추가는 횟수가 아니라 날짜)
+  - 그 외 동일 시간: `10월 총 14회 근무 | 09:00~18:00` / 연속 기간 range
+  - **시간대가 다를 때만** 줄(블록) 분리 (주간/야간 등)
+- **사장 근무표 배정 카드**와 **직원 확인 대기 카드** 모두 이 포맷터를 사용.
+
+## 3. 메인 CTA · 네비게이션 스택
+
+- 메인 확인/배정 CTA는 `StickyActionVariant.filled` (Primary 채움).
+  - 예: 전체 확인, 확인했습니다, 근무 배정하기, + 근무 배정.
+- 화면 push는 `Navigator.push` 직접 호출 금지.
+  - `AppNavigation.pushSingleTop` / `RoomNavigation.openRoom` / `RoomNavigation.pushSingleTop`만 사용.
+- 알림 딥링크도 동일 — 방·알림함·배정표·공지 등이 스택에 중복 쌓이지 않게 할 것.
+- GoRouter로 전면 교체하지 말 것. 현재는 named `Navigator` + 싱글탑이 표준.
+
+## 점검
+
+탭/배정 카드/확인 버튼/딥링크를 건드렸다면 위 3항이 그대로인지 확인한 뒤 끝낸다.

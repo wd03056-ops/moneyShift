@@ -1,0 +1,252 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // 개발용 Mock ID (test_kakao_user_001, test_store_001 …)
+    // Anonymous Auth 미설정이어도 Mock 로그인·시드가 동작하도록 Auth 없이 허용
+    function isDevTestId(id) {
+      return id is string && id.matches('^test_');
+    }
+
+    function memberDoc(roomId, userId) {
+      return get(/databases/$(database)/documents/room_members/$(roomId + '_' + userId)).data;
+    }
+
+    function isRoomMember(roomId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/room_members/$(roomId + '_' + request.auth.uid))
+        && memberDoc(roomId, request.auth.uid).isActive == true;
+    }
+
+    function isRoomManager(roomId) {
+      return isRoomMember(roomId)
+        && memberDoc(roomId, request.auth.uid).role in ['owner', 'manager'];
+    }
+
+    match /users/{userId} {
+      allow read: if isSelf(userId) || isSignedIn() || isDevTestId(userId);
+
+      // FCM 토큰·알림 수신 설정은 본인(또는 test_)만 변경 가능
+      function touchesNotificationSecrets() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny([
+            'fcmToken',
+            'fcmTokens',
+            'fcmTokenUpdatedAt',
+            'isNotificationEnabled'
+          ]);
+      }
+
+      function canWriteUserDoc() {
+        return isSelf(userId)
+          || isDevTestId(userId)
+          || (isSignedIn()
+              && request.resource.data.kakaoId == userId
+              && request.resource.data.authProvider in ['kakao', 'mock']);
+      }
+
+      allow create: if canWriteUserDoc();
+      // 타인(카카오 upsert 경로)은 민감 필드 수정 불가
+      allow update: if isSelf(userId)
+        || isDevTestId(userId)
+        || (canWriteUserDoc() && !touchesNotificationSecrets());
+      allow delete: if false;
+
+      // 인앱 알림함: users/{uid}/notifications/{id}
+      // 읽기·읽음/삭제는 본인만 / 생성은 서버·로그인 클라이언트
+      match /notifications/{notifId} {
+        allow read: if isSelf(userId) || isDevTestId(userId);
+        allow create: if isSignedIn() || isDevTestId(userId);
+        allow update, delete: if isSelf(userId) || isDevTestId(userId);
+      }
+    }
+
+    match /rooms/{roomId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid
+            || isRoomMember(roomId)
+            || isDevTestId(resource.data.ownerId));
+      allow create: if isSignedIn()
+        && (request.resource.data.ownerId == request.auth.uid
+            || isDevTestId(request.resource.data.ownerId));
+      allow update: if isRoomManager(roomId)
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['memberCount', 'updatedAt']))
+        || (isSignedIn() && isDevTestId(resource.data.ownerId));
+      allow delete: if isRoomManager(roomId)
+        || (isSignedIn() && isDevTestId(resource.data.ownerId));
+    }
+
+    match /room_members/{memberId} {
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid
+            || isRoomMember(resource.data.roomId)
+            || isDevTestId(resource.data.userId));
+      allow create: if isSignedIn()
+        && (request.resource.data.userId == request.auth.uid
+            || isRoomManager(request.resource.data.roomId)
+            || isDevTestId(request.resource.data.userId));
+      allow update: if isRoomManager(resource.data.roomId)
+        || resource.data.userId == request.auth.uid
+        || (isSignedIn() && isDevTestId(resource.data.userId));
+      allow delete: if isRoomManager(resource.data.roomId)
+        || (isSignedIn() && isDevTestId(resource.data.userId));
+    }
+
+    match /room_invites/{inviteId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && isRoomManager(request.resource.data.roomId)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.role in ['owner', 'manager', 'staff', 'parttime'];
+      allow update: if isRoomManager(resource.data.roomId)
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['usedCount', 'isActive']));
+      allow delete: if isRoomManager(resource.data.roomId);
+    }
+
+    match /schedules/{scheduleId} {
+      allow read: if isRoomMember(resource.data.roomId)
+        || isDevTestId(resource.data.roomId)
+        || isDevTestId(scheduleId)
+        || isDevTestId(resource.data.storeId);
+
+      allow create: if isRoomManager(request.resource.data.roomId)
+        || isDevTestId(request.resource.data.roomId)
+        || isDevTestId(scheduleId)
+        || isDevTestId(request.resource.data.storeId);
+
+      allow update: if isRoomManager(resource.data.roomId)
+        || (isRoomMember(resource.data.roomId)
+            && resource.data.workerId == request.auth.uid)
+        || isDevTestId(resource.data.roomId)
+        || isDevTestId(scheduleId);
+
+      allow delete: if isRoomManager(resource.data.roomId)
+        || isDevTestId(resource.data.roomId)
+        || isDevTestId(scheduleId);
+    }
+
+    match /schedule_logs/{logId} {
+      allow read: if isRoomMember(resource.data.roomId);
+      allow create: if isSignedIn()
+        && isRoomMember(request.resource.data.roomId)
+        && request.resource.data.action in [
+          'change_requested', 'change_approved', 'change_rejected'
+        ];
+      allow update, delete: if false;
+    }
+
+    match /attendance_logs/{logId} {
+      allow read: if isRoomMember(resource.data.roomId);
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && isRoomMember(request.resource.data.roomId);
+      allow update, delete: if false;
+    }
+
+    match /connection_test/{docId} {
+      allow read, create, update, delete: if isSignedIn() || isDevTestId(docId);
+    }
+
+    match /stores/{storeId} {
+      allow read: if isSignedIn() || isDevTestId(storeId);
+      allow create: if (isSignedIn()
+            && request.resource.data.ownerId == request.auth.uid)
+        || isDevTestId(request.resource.data.ownerId)
+        || isDevTestId(storeId);
+      allow update, delete: if (isSignedIn()
+            && resource.data.ownerId == request.auth.uid)
+        || isDevTestId(resource.data.ownerId)
+        || isDevTestId(storeId);
+    }
+
+    match /attendances/{attendanceId} {
+      allow read: if isSignedIn() || isDevTestId(attendanceId);
+      allow create: if (isSignedIn()
+            && request.resource.data.userId == request.auth.uid)
+        || isDevTestId(request.resource.data.userId)
+        || isDevTestId(attendanceId)
+        || isDevTestId(request.resource.data.storeId);
+      allow update, delete: if (isSignedIn()
+            && resource.data.userId == request.auth.uid)
+        || isDevTestId(resource.data.userId)
+        || isDevTestId(attendanceId)
+        || isDevTestId(resource.data.storeId);
+    }
+
+    match /store_members/{memberId} {
+      allow read: if isSignedIn() || isDevTestId(memberId);
+      allow create, update: if (isSignedIn()
+            && request.resource.data.userId == request.auth.uid)
+        || isDevTestId(request.resource.data.userId)
+        || isDevTestId(request.resource.data.storeId)
+        || isDevTestId(memberId);
+      allow delete: if (isSignedIn()
+            && resource.data.userId == request.auth.uid)
+        || isDevTestId(resource.data.userId)
+        || isDevTestId(memberId);
+    }
+
+    match /shift_requests/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && (request.resource.data.applicantUid == request.auth.uid
+            || isDevTestId(request.resource.data.applicantUid));
+      allow update, delete: if isSignedIn()
+        && (resource.data.applicantUid == request.auth.uid
+            || isDevTestId(resource.data.applicantUid)
+            || isDevTestId(resource.data.storeId));
+    }
+
+    match /payrolls/{payrollId} {
+      allow read: if isSignedIn()
+        && (resource.data.workerUid == request.auth.uid
+            || isDevTestId(resource.data.workerUid)
+            || isDevTestId(resource.data.storeId));
+      allow create, update: if isSignedIn()
+        && (isDevTestId(request.resource.data.storeId)
+            || isDevTestId(request.resource.data.workerUid)
+            || isSignedIn());
+      allow delete: if false;
+    }
+
+    match /notifications/{id} {
+      // 레거시 루트 인박스 (호환)
+      allow read: if isSignedIn()
+        || isDevTestId(resource.data.recipientUid);
+      allow create: if isSignedIn()
+        || isDevTestId(request.resource.data.recipientUid);
+      allow update, delete: if isSignedIn()
+        && (resource.data.recipientUid == request.auth.uid
+            || isDevTestId(resource.data.recipientUid)
+            || isSignedIn());
+    }
+
+    match /notification_jobs/{id} {
+      allow read: if false;
+      allow create: if isSignedIn() || isDevTestId(id);
+      allow update, delete: if false;
+    }
+
+    match /notices/{noticeId} {
+      allow read: if isSignedIn() || isDevTestId(noticeId);
+      allow create, update, delete: if isSignedIn() || isDevTestId(noticeId);
+    }
+
+    match /shift_swaps/{swapId} {
+      allow read: if isSignedIn() || isDevTestId(swapId);
+      allow create, update, delete: if isSignedIn() || isDevTestId(swapId);
+    }
+  }
+}

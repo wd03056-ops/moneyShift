@@ -1,0 +1,19 @@
+name: geolocator_linux
+description: Stub — Android/iOS 빌드에서 package_info_plus 전이를 차단
+version: 0.2.4
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  geolocator_platform_interface: ^4.1.0
+
+flutter:
+  plugin:
+    platforms:
+      linux:
+        dartPluginClass: GeolocatorLinux

@@ -1,0 +1,45 @@
+---
+description: Flutter 레이아웃 overflow를 사전에 방지하는 코딩 규칙
+alwaysApply: true
+---
+
+# Flutter Overflow 사전 방지
+
+레이아웃을 짤 때 **화면에 나타난 뒤에 고치지 말고**, 처음부터 overflow가 나지 않게 작성한다.
+
+## 필수 원칙
+
+1. **고정 높이 안에 자식 합 ≤ 부모 높이**
+   - `SizedBox(height: H)` / `rowHeight` / `Expanded` 슬롯에 넣는 Column/Row는  
+     `자식 높이 합 + padding/margin`이 `H`를 넘지 않게 계산한다.
+   - 여유분(안전 마진) **최소 4~8px**을 남긴다.
+
+2. **캘린더(TableCalendar) 셀**
+   - `rowHeight` ≥ 일자 원 + 점/라벨 + 간격 + 안전 마진.
+   - 권장: 일자 원 28 + gap 2 + 점 5 + 여유 ≥ **rowHeight 52** 이상.
+   - 셀 루트는 `SizedBox(height: rowHeight)`로 고정하고 `Column`은 `mainAxisSize: min` + `MainAxisAlignment.center`.
+   - `shouldFillViewport: true`일 때는 특히 행 높이를 더 넉넉히 잡는다.
+   - `_calendarHeight` 계산 시 header/dow/행 합에 **+8 버퍼**를 더한다.
+
+3. **텍스트**
+   - 한 줄 영역: `maxLines` + `overflow: TextOverflow.ellipsis`.
+   - 가변 폭 Row 안 긴 텍스트: 반드시 `Expanded`/`Flexible`로 감싼다.
+
+4. **스크롤**
+   - 화면/시트 본문이 길어질 수 있으면 `SingleChildScrollView` / `ListView` / 기존 `ScrollablePageBody`를 쓴다.
+   - 스크롤 자식에 `Expanded`를 넣지 않는다.
+
+5. **Dialog / BottomSheet**
+   - `Column(mainAxisSize: min)` + 내부 고정 높이 위젯은 합산 높이가 화면을 넘지 않게 하거나,  
+     본문을 스크롤 가능하게 만든다.
+
+## 금지
+
+- 측정 없이 `rowHeight: 42~48`에 28px 원 + 점 Column을 넣기
+- `Column`에 고정 높이 자식만 쌓고 부모 높이는 더 작게 두기
+- overflow가 난 뒤에야 높이를 키우는 사후 대응을 기본으로 삼기
+
+## 작업 후 점검
+
+- 캘린더·칩·카드·바텀시트를 추가/수정했다면 overflow(노란/검은 줄, BOTTOM OVERFLOWED)가  
+  안 나는지 해당 화면을 기준으로 높이 합을 한번 더 확인한다.
