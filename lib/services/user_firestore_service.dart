@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/constants/firestore_paths.dart';
+import '../core/firebase/firestore_query_limits.dart';
 import '../models/enums/member_role.dart';
 import '../models/user_model.dart';
 
@@ -197,6 +198,7 @@ class UserFirestoreService {
       final q = await _db
           .collection(collection)
           .where('userId', isEqualTo: uid)
+          .limit(FirestoreQueryLimits.batchPage)
           .get();
       for (final doc in q.docs) {
         await doc.reference.set({

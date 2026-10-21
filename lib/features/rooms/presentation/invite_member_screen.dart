@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/async_action_guard.dart';
 import '../../../core/widgets/app_select_chip.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../mock/mock_store.dart';
@@ -25,6 +26,10 @@ class InviteMemberScreen extends StatefulWidget {
 class _InviteMemberScreenState extends State<InviteMemberScreen> {
   MemberRole _selectedRole = MemberRole.parttime;
   RoomInviteModel? _invite;
+  final _roleGuard = AsyncActionGuard(
+    cooldown: const Duration(milliseconds: 250),
+  );
+  final _copyGuard = AsyncActionGuard();
 
   @override
   void initState() {
@@ -36,6 +41,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
   }
 
   void _selectRole(MemberRole role) {
+    if (!_roleGuard.tryLock()) return;
     try {
       final invite = MockStore.instance.ensureInviteForRole(
         roomId: widget.roomId,
@@ -51,15 +57,19 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('초대 불러오기 실패: $e')),
       );
+    } finally {
+      _roleGuard.unlock();
     }
   }
 
   Future<void> _copy(String value, String label) async {
-    await Clipboard.setData(ClipboardData(text: value));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label을(를) 복사했습니다.')),
-    );
+    await _copyGuard.run(() async {
+      await Clipboard.setData(ClipboardData(text: value));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$label을(를) 복사했습니다.')),
+      );
+    });
   }
 
   @override

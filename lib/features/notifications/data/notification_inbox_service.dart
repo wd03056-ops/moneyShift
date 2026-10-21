@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/config/dev_auth_config.dart';
 import '../../../core/constants/firestore_paths.dart';
+import '../../../core/firebase/firestore_query_limits.dart';
 import '../../../models/notification_item.dart';
 import 'mock_notification_repository.dart';
 
@@ -31,7 +32,7 @@ class NotificationInboxService {
     }
     return _col(recipientUid)
         .orderBy('createdAt', descending: true)
-        .limit(100)
+        .limit(FirestoreQueryLimits.inbox)
         .snapshots()
         .map((snap) {
       final list = snap.docs
@@ -56,7 +57,7 @@ class NotificationInboxService {
     try {
       final snap = await _col(recipientUid)
           .orderBy('createdAt', descending: true)
-          .limit(100)
+          .limit(FirestoreQueryLimits.inbox)
           .get();
       return snap.docs
           .map(
@@ -87,7 +88,7 @@ class NotificationInboxService {
   }
 
   Future<List<NotificationItem>> _fetchUnordered(String recipientUid) async {
-    final snap = await _col(recipientUid).limit(100).get();
+    final snap = await _col(recipientUid).limit(FirestoreQueryLimits.inbox).get();
     final list = snap.docs
         .map(
           (d) => NotificationItem.fromFirestore(

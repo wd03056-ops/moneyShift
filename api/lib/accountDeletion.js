@@ -42,9 +42,24 @@ async function verifyKakaoAccessToken(accessToken) {
   }
 }
 
-async function queryByField(db, collection, field, value) {
-  const snap = await db.collection(collection).where(field, '==', value).get();
-  return snap.docs;
+/** 목록 폭탄 방지 — 페이지 단위로 전량 수집 (탈퇴 익명화용) */
+async function queryByField(db, collection, field, value, pageSize = 100) {
+  const docs = [];
+  let last = null;
+  // 안전 상한: 최대 50페이지 (5000 docs)
+  for (let page = 0; page < 50; page += 1) {
+    let q = db
+      .collection(collection)
+      .where(field, '==', value)
+      .limit(pageSize);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    if (snap.empty) break;
+    docs.push(...snap.docs);
+    last = snap.docs[snap.docs.length - 1];
+    if (snap.size < pageSize) break;
+  }
+  return docs;
 }
 
 async function commitInChunks(db, mutators) {

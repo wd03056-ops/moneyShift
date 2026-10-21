@@ -40,7 +40,7 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   List<KakaoPlaceResult> _searchResults = const [];
   bool _searching = false;
   bool _loadingGps = false;
-  bool _submitting = false;
+  bool _submitting = false; // 연타 시 중복 생성 요청 차단
   String? _searchError;
 
   /// 래퍼가 테두리·그림자를 담당 → 버튼 자체 보더는 없음
@@ -253,6 +253,7 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
   }
 
   void _submit() {
+    if (_submitting) return;
     if (!_formKey.currentState!.validate()) return;
     if (_latitude == null || _longitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(

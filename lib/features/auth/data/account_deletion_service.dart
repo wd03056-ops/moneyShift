@@ -5,6 +5,7 @@ import '../../../core/navigation/app_navigator.dart';
 import '../../../core/navigation/app_route_names.dart';
 import '../../../core/storage/local_data_cleaner.dart';
 import '../../../core/storage/secure_session_storage.dart';
+import '../../../core/utils/async_action_guard.dart';
 import '../../../data/services/api_service.dart';
 import '../../../mock/mock_session.dart';
 import '../../../services/fcm_service.dart';
@@ -32,9 +33,27 @@ class AccountDeletionService {
   final ApiService _api;
   final SocialAuthUnlinkService _social;
   final SecureSessionStorage _secure;
+  final _deleteGuard = AsyncActionGuard(
+    cooldown: const Duration(seconds: 2),
+  );
+  final _logoutGuard = AsyncActionGuard();
 
   /// 현재 세션 계정 탈퇴. API 실패 시 Unlink/로컬 삭제를 하지 않는다.
   Future<AccountDeletionResult> deleteCurrentAccount() async {
+    if (!_deleteGuard.tryLock()) {
+      return const AccountDeletionResult(
+        ok: false,
+        message: '계정 삭제가 이미 진행 중입니다.',
+      );
+    }
+    try {
+      return await _deleteCurrentAccountBody();
+    } finally {
+      _deleteGuard.unlock();
+    }
+  }
+
+  Future<AccountDeletionResult> _deleteCurrentAccountBody() async {
     final user = MockSession.instance.currentUser;
     if (user == null) {
       return const AccountDeletionResult(
@@ -113,15 +132,17 @@ class AccountDeletionService {
 
   /// 로그아웃 (unlink 없음)
   Future<void> logout() async {
-    final user = MockSession.instance.currentUser;
-    final provider = (await _secure.readAuthProvider()) ?? 'kakao';
-    try {
-      await FcmService.instance.unbind();
-    } catch (_) {}
-    await _social.signOutOnly(authProvider: provider);
-    await LocalDataCleaner.clearSessionOnly(userId: user?.uid);
-    MockSession.instance.logout();
-    _goLoginGate();
+    await _logoutGuard.run(() async {
+      final user = MockSession.instance.currentUser;
+      final provider = (await _secure.readAuthProvider()) ?? 'kakao';
+      try {
+        await FcmService.instance.unbind();
+      } catch (_) {}
+      await _social.signOutOnly(authProvider: provider);
+      await LocalDataCleaner.clearSessionOnly(userId: user?.uid);
+      MockSession.instance.logout();
+      _goLoginGate();
+    });
   }
 
   void _goLoginGate() {

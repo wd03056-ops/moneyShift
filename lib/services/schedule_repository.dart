@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../core/constants/firestore_paths.dart';
 import '../core/exceptions/room_exceptions.dart';
 import '../core/exceptions/schedule_exceptions.dart';
+import '../core/firebase/firestore_query_limits.dart';
 import '../models/models.dart';
 import 'payroll_calculator.dart';
 
@@ -87,6 +88,7 @@ class ScheduleRepository {
     return _schedules
         .where('roomId', isEqualTo: roomId)
         .orderBy('date', descending: true)
+        .limit(FirestoreQueryLimits.timeline)
         .snapshots()
         .map((s) => s.docs.map(ScheduleModel.fromFirestore).toList());
   }
@@ -95,6 +97,7 @@ class ScheduleRepository {
     return _schedules
         .where('workerId', isEqualTo: workerId)
         .orderBy('date', descending: true)
+        .limit(FirestoreQueryLimits.timeline)
         .snapshots()
         .map((s) => s.docs.map(ScheduleModel.fromFirestore).toList());
   }
@@ -113,6 +116,7 @@ class ScheduleRepository {
             'status',
             isEqualTo: ScheduleStatus.changeRequestedByStaff.firestoreValue,
           )
+          .limit(FirestoreQueryLimits.list)
           .snapshots()
           .map((s) => s.docs.map(ScheduleModel.fromFirestore).toList());
     }
@@ -125,6 +129,7 @@ class ScheduleRepository {
           'status',
           isEqualTo: ScheduleStatus.changeRequestedByOwner.firestoreValue,
         )
+        .limit(FirestoreQueryLimits.list)
         .snapshots()
         .map((s) => s.docs.map(ScheduleModel.fromFirestore).toList());
   }
@@ -351,6 +356,7 @@ class ScheduleRepository {
     final snap = await _logs
         .where('scheduleId', isEqualTo: scheduleId)
         .orderBy('createdAt', descending: true)
+        .limit(FirestoreQueryLimits.list)
         .get();
     return snap.docs.map(ScheduleLogModel.fromFirestore).toList();
   }
@@ -359,7 +365,7 @@ class ScheduleRepository {
     return _logs
         .where('roomId', isEqualTo: roomId)
         .orderBy('createdAt', descending: true)
-        .limit(50)
+        .limit(FirestoreQueryLimits.timeline)
         .snapshots()
         .map((s) => s.docs.map(ScheduleLogModel.fromFirestore).toList());
   }

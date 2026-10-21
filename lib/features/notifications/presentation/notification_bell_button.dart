@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/config/dev_auth_config.dart';
 import '../../../core/constants/firestore_paths.dart';
+import '../../../core/firebase/firestore_query_limits.dart';
 import '../../../core/navigation/app_navigation.dart';
 import '../../../core/navigation/app_route_names.dart';
 import '../../../core/theme/app_colors.dart';
@@ -69,7 +70,7 @@ class NotificationBellButton extends StatelessWidget {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection(FirestorePaths.userNotifications(uid))
-          .limit(50)
+          .limit(FirestoreQueryLimits.inbox)
           .snapshots(),
       builder: (context, snap) {
         var unread = 0;

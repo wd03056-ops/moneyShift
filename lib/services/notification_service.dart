@@ -1,9 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants/firestore_paths.dart';
-import '../core/navigation/notification_deep_link.dart';
 import '../core/security/secure_log.dart';
 import '../features/notifications/data/notification_preference_store.dart';
+import '../features/notifications/domain/notification_dedupe.dart';
 import '../features/notifications/domain/notification_sanitizer.dart';
 import '../features/notifications/domain/notification_templates.dart';
 import '../models/notification_model.dart';
@@ -45,22 +45,41 @@ class NotificationService {
         return;
       }
 
-      final userSnap =
-          await _db.collection(FirestorePaths.users).doc(recipientUid).get();
-      final userData = userSnap.data() ?? {};
-      final token = userSnap.exists ? _resolveToken(userData) : null;
       final resolvedStoreId = storeId.isNotEmpty
           ? storeId
           : (data['storeId'] ?? '');
-
-      final inboxRef = _db
-          .collection(FirestorePaths.userNotifications(recipientUid))
-          .doc();
-
       final safeTitle = NotificationSanitizer.sanitizeTitle(title);
       final safeBody = NotificationSanitizer.sanitizeBody(body);
       final safeStoreId =
           NotificationSanitizer.sanitize(resolvedStoreId, maxLength: 64);
+
+      // 멱등성: 동일 수신·타입·문구 짧은 시간 재큐잉 차단 (FCM 요금 방어)
+      final jobIdempotencyKey = NotificationDedupe.contentFingerprint(
+        userId: recipientUid,
+        type: type.firestoreValue,
+        title: safeTitle,
+        body: safeBody,
+        storeId: safeStoreId,
+      );
+      if (NotificationDedupe.shouldSkip(
+        'fcm:$jobIdempotencyKey',
+        window: NotificationDedupe.contentWindow,
+      )) {
+        SecureLog.d(
+          '[Notification] skip idempotent dup uid=$recipientUid '
+          'type=${type.firestoreValue}',
+        );
+        return;
+      }
+
+      final userSnap =
+          await _db.collection(FirestorePaths.users).doc(recipientUid).get();
+      final userData = userSnap.data() ?? {};
+      final token = userSnap.exists ? _resolveToken(userData) : null;
+
+      final inboxRef = _db
+          .collection(FirestorePaths.userNotifications(recipientUid))
+          .doc();
 
       final model = NotificationModel.withDeepLink(
         id: inboxRef.id,
@@ -97,6 +116,7 @@ class NotificationService {
         'status': token == null ? 'no_token' : 'queued',
         'inboxId': inboxRef.id,
         'inboxPath': inboxRef.path,
+        'idempotencyKey': jobIdempotencyKey,
         'createdAt': FieldValue.serverTimestamp(),
       });
       SecureLog.d(

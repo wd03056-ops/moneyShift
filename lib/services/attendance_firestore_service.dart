@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/constants/firestore_paths.dart';
+import '../core/firebase/firestore_query_limits.dart';
 import '../core/permissions/store_permission_guard.dart';
 import '../models/attendance_session_model.dart';
 import '../models/geo_location.dart';
@@ -134,12 +135,13 @@ class AttendanceFirestoreService {
   Future<List<AttendanceSessionModel>> listByUser(
     String userId, {
     String? storeId,
+    int limit = FirestoreQueryLimits.timeline,
   }) async {
     Query<Map<String, dynamic>> q = _col.where('userId', isEqualTo: userId);
     if (storeId != null) {
       q = q.where('storeId', isEqualTo: storeId);
     }
-    final snap = await q.get();
+    final snap = await q.limit(limit).get();
     return snap.docs.map(AttendanceSessionModel.fromFirestore).toList();
   }
 

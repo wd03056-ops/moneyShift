@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../core/constants/app_constants.dart';
 import '../core/constants/firestore_paths.dart';
 import '../core/exceptions/room_exceptions.dart';
+import '../core/firebase/firestore_query_limits.dart';
 import '../models/models.dart';
 
 /// 방(매장) · 직책 지정 초대 · 멤버 가입 Firestore CRUD
@@ -189,6 +190,7 @@ class RoomRepository {
     final snap = await _invites
         .where('roomId', isEqualTo: roomId)
         .where('isActive', isEqualTo: true)
+        .limit(FirestoreQueryLimits.list)
         .get();
 
     return snap.docs.map(RoomInviteModel.fromFirestore).toList();
@@ -305,6 +307,7 @@ class RoomRepository {
   Stream<List<RoomModel>> watchOwnedRooms(String ownerId) {
     return _rooms
         .where('ownerId', isEqualTo: ownerId)
+        .limit(FirestoreQueryLimits.rooms)
         .snapshots()
         .map((s) => s.docs.map(RoomModel.fromFirestore).toList());
   }
@@ -320,6 +323,7 @@ class RoomRepository {
     return _members
         .where('userId', isEqualTo: uid)
         .where('isActive', isEqualTo: true)
+        .limit(FirestoreQueryLimits.rooms)
         .snapshots()
         .asyncMap((memberSnap) async {
       if (memberSnap.docs.isEmpty) return <RoomMembershipEntry>[];
@@ -365,6 +369,7 @@ class RoomRepository {
     final snap = await _members
         .where('roomId', isEqualTo: roomId)
         .where('isActive', isEqualTo: true)
+        .limit(FirestoreQueryLimits.list)
         .get();
     return snap.docs.map(RoomMemberModel.fromFirestore).toList();
   }

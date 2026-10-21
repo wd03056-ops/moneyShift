@@ -446,7 +446,12 @@ abstract final class AppNotificationDispatcher {
     required String noticeId,
   }) {
     final key = NotificationDedupe.storeNoticeKey(noticeId);
-    if (NotificationDedupe.shouldSkip(key)) return;
+    if (NotificationDedupe.shouldSkip(
+      key,
+      window: NotificationDedupe.noticeWindow,
+    )) {
+      return;
+    }
     _deliver(
       targetUserIds: staffUids,
       type: NotificationType.notice,
@@ -512,6 +517,21 @@ abstract final class AppNotificationDispatcher {
     final safeStoreId = NotificationSanitizer.sanitize(storeId, maxLength: 64);
 
     // 1) Mock: 수신자별 저장소에 즉시 적재 (계정 전환 핵심)
+    //    동일 문구 짧은 시간 중복 적재는 수신자별로 스킵
+    final mockTargets = <String>{};
+    for (final uid in targets) {
+      if (NotificationDedupe.shouldSkipContent(
+        userId: uid,
+        type: typeKey,
+        title: safeTitle,
+        body: safeBody,
+        storeId: safeStoreId,
+      )) {
+        debugPrint('[AppNotif] mock skip content-dup uid=$uid');
+        continue;
+      }
+      mockTargets.add(uid);
+    }
     final link = NotificationDeepLink.fromType(
       type: type,
       storeId: safeStoreId,
@@ -530,7 +550,9 @@ abstract final class AppNotificationDispatcher {
       targetRoute: link.targetRoute,
       params: link.params,
     );
-    _mock.addNotificationToMany(targets, template);
+    if (mockTargets.isNotEmpty) {
+      _mock.addNotificationToMany(mockTargets, template);
+    }
 
     // 2) 실서비스: Firestore + FCM
     if (!DevAuthConfig.isMockAuthEnabled) {

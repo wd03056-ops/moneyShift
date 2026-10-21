@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/constants/firestore_paths.dart';
 import '../core/exceptions/room_exceptions.dart';
+import '../core/firebase/firestore_query_limits.dart';
 import '../core/permissions/store_permission_guard.dart';
 import '../models/enums/member_role.dart';
 import '../models/store_member_model.dart';
@@ -81,18 +82,26 @@ class StoreMemberService {
     return StoreMemberModel.fromFirestore(snap);
   }
 
-  Future<List<StoreMemberModel>> listByStore(String storeId) async {
+  Future<List<StoreMemberModel>> listByStore(
+    String storeId, {
+    int limit = FirestoreQueryLimits.list,
+  }) async {
     final q = await _col
         .where('storeId', isEqualTo: storeId)
         .where('isActive', isEqualTo: true)
+        .limit(limit)
         .get();
     return q.docs.map(StoreMemberModel.fromFirestore).toList();
   }
 
-  Future<List<StoreMemberModel>> listByUser(String userId) async {
+  Future<List<StoreMemberModel>> listByUser(
+    String userId, {
+    int limit = FirestoreQueryLimits.rooms,
+  }) async {
     final q = await _col
         .where('userId', isEqualTo: userId)
         .where('isActive', isEqualTo: true)
+        .limit(limit)
         .get();
     return q.docs.map(StoreMemberModel.fromFirestore).toList();
   }

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/constants/firestore_paths.dart';
 import '../core/exceptions/room_exceptions.dart';
+import '../core/firebase/firestore_query_limits.dart';
 import '../core/permissions/store_permission_guard.dart';
 import '../models/enums/shift_request_status.dart';
 import '../models/enums/shift_request_type.dart';
@@ -102,13 +103,14 @@ class ShiftRequestService {
   Future<List<ShiftRequestModel>> listByStore(
     String storeId, {
     ShiftRequestStatus? status,
+    int limit = FirestoreQueryLimits.list,
   }) async {
     Query<Map<String, dynamic>> q =
         _col.where('storeId', isEqualTo: storeId);
     if (status != null) {
       q = q.where('status', isEqualTo: status.firestoreValue);
     }
-    final snap = await q.get();
+    final snap = await q.limit(limit).get();
     return snap.docs.map(ShiftRequestModel.fromFirestore).toList();
   }
 

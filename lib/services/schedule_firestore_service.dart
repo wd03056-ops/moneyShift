@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/constants/firestore_paths.dart';
+import '../core/firebase/firestore_query_limits.dart';
 import '../models/enums/schedule_status.dart';
 import '../models/schedule_model.dart';
 
@@ -75,6 +76,7 @@ class ScheduleFirestoreService {
   Future<List<ScheduleModel>> listByWorker(
     String workerId, {
     String? roomId,
+    int limit = FirestoreQueryLimits.timeline,
   }) async {
     try {
       Query<Map<String, dynamic>> q =
@@ -82,7 +84,7 @@ class ScheduleFirestoreService {
       if (roomId != null) {
         q = q.where('roomId', isEqualTo: roomId);
       }
-      final snap = await q.get();
+      final snap = await q.limit(limit).get();
       debugPrint(
         '[ScheduleFirestore] listByWorker ok worker=$workerId '
         'count=${snap.docs.length}',
@@ -101,11 +103,13 @@ class ScheduleFirestoreService {
   Future<List<ScheduleModel>> listByRoomAndDate({
     required String roomId,
     required String date,
+    int limit = FirestoreQueryLimits.list,
   }) async {
     try {
       final snap = await _col
           .where('roomId', isEqualTo: roomId)
           .where('date', isEqualTo: date)
+          .limit(limit)
           .get();
       debugPrint(
         '[ScheduleFirestore] listByRoomAndDate ok room=$roomId date=$date '

@@ -22,7 +22,7 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _codeController;
   MemberRole _demoRole = MemberRole.parttime;
-  bool _submitting = false;
+  bool _submitting = false; // 연타 시 중복 가입 요청 차단
 
   @override
   void initState() {
@@ -37,6 +37,7 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
   }
 
   Future<void> _join() async {
+    if (_submitting) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() => _submitting = true);
     try {
@@ -77,6 +78,7 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
   }
 
   Future<void> _seedAndJoin() async {
+    if (_submitting) return;
     setState(() => _submitting = true);
     try {
       final invite = MockStore.instance.seedInviteFromOtherOwner(

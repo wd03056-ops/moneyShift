@@ -215,6 +215,7 @@ class _NoticeComposeScreenState extends State<_NoticeComposeScreen> {
   }
 
   Future<void> _save() async {
+    if (_saving) return;
     setState(() => _saving = true);
     try {
       MockStore.instance.createNotice(

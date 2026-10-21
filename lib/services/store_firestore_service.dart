@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/constants/firestore_paths.dart';
+import '../core/firebase/firestore_query_limits.dart';
 import '../models/geo_location.dart';
 import '../models/store_model.dart';
 import 'store_member_service.dart';
@@ -86,9 +87,13 @@ class StoreFirestoreService {
     }
   }
 
-  Future<List<StoreModel>> listByOwner(String ownerId) async {
+  Future<List<StoreModel>> listByOwner(
+    String ownerId, {
+    int limit = FirestoreQueryLimits.rooms,
+  }) async {
     try {
-      final q = await _col.where('ownerId', isEqualTo: ownerId).get();
+      final q =
+          await _col.where('ownerId', isEqualTo: ownerId).limit(limit).get();
       debugPrint(
         '[StoreFirestore] listByOwner ok ownerId=$ownerId count=${q.docs.length}',
       );

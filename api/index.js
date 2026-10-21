@@ -12,6 +12,10 @@ const {
   deleteAccountInFirestore,
   isConfigured: isFirebaseConfigured,
 } = require('./lib/accountDeletion');
+const {
+  createRateLimiter,
+  createStrictRateLimiter,
+} = require('./lib/rateLimit');
 
 const app = express();
 
@@ -23,6 +27,24 @@ app.use(
   }),
 );
 app.use(express.json({ limit: '1mb' }));
+
+/** 전역 Rate Limit — 1분 60회 (헬스체크 제외) */
+app.use(
+  createRateLimiter({
+    windowMs: 60_000,
+    max: 60,
+    skip: (req) => {
+      const p = req.path || '';
+      return (
+        p === '/api/health' ||
+        p === '/health' ||
+        req.method === 'OPTIONS'
+      );
+    },
+  }),
+);
+
+const strictAccountLimit = createStrictRateLimiter();
 
 /** 헬스체크 — Flutter / 배포 확인용 */
 app.get(['/api/health', '/health'], (_req, res) => {
@@ -44,6 +66,10 @@ app.get(['/api', '/', '/api/'], (_req, res) => {
       authPing: 'GET /api/auth/ping',
       schedulesPing: 'GET /api/schedules/ping',
       accountDelete: 'DELETE /api/account',
+    },
+    rateLimit: {
+      global: '60 req / 60s per IP (and userId if present)',
+      accountDelete: '5 req / 60s',
     },
   });
 });
@@ -173,9 +199,17 @@ async function handleAccountDelete(req, res) {
   }
 }
 
-app.delete(['/api/account', '/account'], handleAccountDelete);
+app.delete(
+  ['/api/account', '/account'],
+  strictAccountLimit,
+  handleAccountDelete,
+);
 /** 일부 클라이언트/프록시가 DELETE body 를 막으면 POST 로도 허용 */
-app.post(['/api/account/delete', '/account/delete'], handleAccountDelete);
+app.post(
+  ['/api/account/delete', '/account/delete'],
+  strictAccountLimit,
+  handleAccountDelete,
+);
 
 function _bearerToken(req) {
   const h = req.headers.authorization;

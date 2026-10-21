@@ -298,7 +298,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   }
 
   Future<void> _pickBreakMinutes() async {
-    if (_submitting) return;
+    if (_submitting) return; // 연타·중복 배정 요청 차단
     final selected = await showModalBottomSheet<int>(
       context: context,
       backgroundColor: Colors.white,
