@@ -444,14 +444,14 @@ class RoomRepository {
     }
   }
 
+  /// 전역 유일 숫자 코드 — 매장·직책과 무관하게 코드 하나 = 방 하나
   Future<String> _generateUniqueInviteCode({int length = 8}) async {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final random = Random.secure();
 
-    for (var attempt = 0; attempt < 8; attempt++) {
+    for (var attempt = 0; attempt < 64; attempt++) {
       final code = List.generate(
         length,
-        (_) => chars[random.nextInt(chars.length)],
+        (_) => random.nextInt(10).toString(),
       ).join();
 
       final existing = await _invites

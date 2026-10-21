@@ -6,16 +6,33 @@ import '../../../core/widgets/outlined_toggle.dart';
 import '../../../mock/mock_session.dart';
 import '../data/notification_preference_store.dart';
 
-/// [푸시 알림 허용] 토글 — 내정보 / 매장 설정 공통
+IconData _categoryIcon(NotificationCategory category) {
+  switch (category) {
+    case NotificationCategory.schedule:
+      return Icons.event_note_outlined;
+    case NotificationCategory.commute:
+      return Icons.directions_walk_outlined;
+    case NotificationCategory.notice:
+      return Icons.campaign_outlined;
+  }
+}
+
+/// 근무 / 출퇴근 / 공지 알림을 각각 켜고 끄는 설정 블록
+///
+/// 사장 설정·직원 급여·정보·내정보에서 동일 UI로 사용합니다.
 class PushNotificationSwitchTile extends StatefulWidget {
   const PushNotificationSwitchTile({
     super.key,
     this.dense = false,
     this.inCard = true,
+    this.showLeading = true,
   });
 
   final bool dense;
   final bool inCard;
+
+  /// 카테고리별 leading 아이콘 표시
+  final bool showLeading;
 
   @override
   State<PushNotificationSwitchTile> createState() =>
@@ -24,7 +41,7 @@ class PushNotificationSwitchTile extends StatefulWidget {
 
 class _PushNotificationSwitchTileState
     extends State<PushNotificationSwitchTile> {
-  bool _busy = false;
+  NotificationCategory? _busyCat;
 
   @override
   void initState() {
@@ -32,15 +49,20 @@ class _PushNotificationSwitchTileState
     NotificationPreferenceStore.instance.ensureLoaded();
   }
 
-  Future<void> _onChanged(String uid, bool wantEnabled) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    final ok = await NotificationPreferenceStore.instance.setEnabled(
-      uid,
-      wantEnabled,
+  Future<void> _onChanged(
+    String uid,
+    NotificationCategory category,
+    bool wantEnabled,
+  ) async {
+    if (_busyCat != null) return;
+    setState(() => _busyCat = category);
+    final ok = await NotificationPreferenceStore.instance.setCategoryEnabled(
+      userId: uid,
+      category: category,
+      enabled: wantEnabled,
     );
     if (!mounted) return;
-    setState(() => _busy = false);
+    setState(() => _busyCat = null);
     if (wantEnabled && !ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -60,56 +82,78 @@ class _PushNotificationSwitchTileState
       ]),
       builder: (context, _) {
         final uid = MockSession.instance.currentUser?.uid;
-        final enabled = uid == null
-            ? true
-            : NotificationPreferenceStore.instance.isEnabled(uid);
-        final textTheme = Theme.of(context).textTheme;
 
-        final tile = Padding(
-          padding: widget.dense
-              ? const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
-              : const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '푸시 알림 허용',
-                      style: textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+        final tiles = <Widget>[];
+        for (var i = 0; i < NotificationCategory.values.length; i++) {
+          final cat = NotificationCategory.values[i];
+          final enabled = uid == null
+              ? true
+              : NotificationPreferenceStore.instance
+                  .isCategoryEnabled(uid, cat);
+          final busy = _busyCat == cat;
+
+          tiles.add(
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.showLeading) ...[
+                    Icon(
+                      _categoryIcon(cat),
+                      color: AppColors.primary,
+                      size: 24,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      enabled
-                          ? '근무·출퇴근·공지 알림을 받습니다'
-                          : '알림이 꺼져 있습니다 (근무 배정·결근은 예외)',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: AppColors.textSecondary,
-                        height: 1.35,
-                      ),
-                    ),
+                    const SizedBox(width: 12),
                   ],
-                ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          cat.titleKo,
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          cat.subtitleKo,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedToggle(
+                    value: enabled,
+                    onChanged: (uid == null || busy)
+                        ? null
+                        : (v) => _onChanged(uid, cat, v),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              OutlinedToggle(
-                value: enabled,
-                onChanged: (uid == null || _busy)
-                    ? null
-                    : (v) => _onChanged(uid, v),
-              ),
-            ],
-          ),
+            ),
+          );
+          if (i < NotificationCategory.values.length - 1) {
+            tiles.add(const Divider(height: 1));
+          }
+        }
+
+        final column = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: tiles,
         );
 
-        if (!widget.inCard) return tile;
+        if (!widget.inCard) return column;
         return AppCard(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          child: tile,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: column,
         );
       },
     );

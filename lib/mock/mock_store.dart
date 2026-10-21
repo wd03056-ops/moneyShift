@@ -24,7 +24,8 @@ class MockStore extends ChangeNotifier {
   /// 사장·직원 공통 데모 매장 (계정 전환 시에도 유지)
   static const demoRoomId = 'demo_room_shared';
   static const demoInviteId = 'demo_invite_shared';
-  static const demoInviteCode = 'DEMOJOIN';
+  /// 데모 알바 초대 코드 (숫자 8자리 · 전역 유일)
+  static const demoInviteCode = '48290173';
   static const demoScheduleId = 'demo_schedule_today';
 
   final _uuid = const Uuid();
@@ -318,7 +319,7 @@ class MockStore extends ChangeNotifier {
     invites[demoInviteId] = RoomInviteModel(
       id: demoInviteId,
       roomId: demoRoomId,
-      code: demoInviteCode,
+      code: demoInviteCode, // 숫자만 (예: 482901)
       role: MemberRole.parttime,
       createdBy: owner.uid,
       expiresAt: now.add(const Duration(days: 30)),
@@ -498,6 +499,44 @@ class MockStore extends ChangeNotifier {
     );
   }
 
+  /// 해당 직책의 활성 초대가 있으면 반환, 없으면 생성.
+  /// 예전 한글 접두사 코드는 비활성 후 숫자 코드로 재발급.
+  RoomInviteModel ensureInviteForRole({
+    required String roomId,
+    required MemberRole role,
+    Duration validFor = const Duration(days: 7),
+  }) {
+    final existing = activeInviteForRole(roomId, role);
+    if (existing != null) {
+      if (_isNumericInviteCode(existing.code)) return existing;
+      invites[existing.id] = existing.copyWith(isActive: false);
+    }
+    return createInvite(
+      roomId: roomId,
+      role: role,
+      validFor: validFor,
+    );
+  }
+
+  static bool _isNumericInviteCode(String code) {
+    if (code.isEmpty) return false;
+    for (final c in code.codeUnits) {
+      if (c < 0x30 || c > 0x39) return false;
+    }
+    return true;
+  }
+
+  RoomInviteModel? activeInviteForRole(String roomId, MemberRole role) {
+    for (final invite in invites.values) {
+      if (invite.roomId == roomId &&
+          invite.role == role &&
+          invite.canBeUsed) {
+        return invite;
+      }
+    }
+    return null;
+  }
+
   RoomInviteModel seedInviteFromOtherOwner({
     MemberRole role = MemberRole.parttime,
     String roomName = '이웃 카페 (데모)',
@@ -541,10 +580,16 @@ class MockStore extends ChangeNotifier {
     Duration? validFor,
   }) {
     final inviteId = _uuid.v4();
+    final code = _generateGloballyUniqueNumericCode();
+    // 매장·직책과 무관하게 코드는 전역 1:1 (같은 코드 → 다른 방 진입 불가)
+    assert(
+      !_isInviteCodeTaken(code),
+      'invite code collision: $code',
+    );
     final invite = RoomInviteModel(
       id: inviteId,
       roomId: roomId,
-      code: _generateCode(),
+      code: code,
       role: role,
       createdBy: createdBy,
       expiresAt: validFor != null ? KstDateTime.now().add(validFor) : null,
@@ -559,14 +604,15 @@ class MockStore extends ChangeNotifier {
     final user = _session.currentUser;
     if (user == null) throw const NotAuthenticatedException();
 
-    final code = rawCode.trim().toUpperCase();
-    RoomInviteModel? invite;
-    for (final i in invites.values) {
-      if (i.code == code && i.isActive) {
-        invite = i;
-        break;
-      }
+    final code = rawCode.trim();
+    final matches = invites.values
+        .where((i) => i.isActive && i.code == code)
+        .toList();
+    if (matches.length > 1) {
+      // 데이터 무결성 오류 — 동일 코드가 두 방에 있으면 안 됨
+      throw const InviteInvalidException('초대 코드가 올바르지 않습니다.');
     }
+    final invite = matches.isEmpty ? null : matches.first;
     if (invite == null || !invite.canBeUsed) {
       throw const InviteInvalidException();
     }
@@ -2668,14 +2714,21 @@ class MockStore extends ChangeNotifier {
 
   String _memberKey(String roomId, String userId) => '${roomId}_$userId';
 
-  String _generateCode({int length = 8}) {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    String code;
-    do {
-      code = List.generate(length, (_) => chars[_random.nextInt(chars.length)])
-          .join();
-    } while (invites.values.any((i) => i.code == code));
-    return code;
+  /// 전역 유일 숫자 초대 코드 (활성·비활성·모든 매장 포함해 중복 금지)
+  String _generateGloballyUniqueNumericCode({int length = 8}) {
+    for (var attempt = 0; attempt < 64; attempt++) {
+      final code = List.generate(
+        length,
+        (_) => _random.nextInt(10).toString(),
+      ).join();
+      if (!_isInviteCodeTaken(code)) return code;
+    }
+    throw StateError('초대 코드 생성에 실패했습니다. 다시 시도해주세요.');
+  }
+
+  /// 어떤 매장이든 이미 쓰인 코드인지 (비활성 포함)
+  bool _isInviteCodeTaken(String code) {
+    return invites.values.any((i) => i.code == code);
   }
 }
 

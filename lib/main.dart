@@ -9,6 +9,8 @@ import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 
 import 'core/config/dev_auth_config.dart';
 import 'core/config/kakao_config.dart';
+import 'data/config/api_config.dart';
+import 'data/services/api_service.dart';
 import 'core/deeplink/invite_deep_link_service.dart';
 import 'core/firebase/firebase_bootstrap.dart';
 import 'core/navigation/app_navigation.dart';
@@ -34,6 +36,15 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   DevAuthConfig.logStatus();
+  ApiConfig.logStatus();
+  if (kDebugMode) {
+    // 배포 API 연결 스모크 (실패해도 앱 기동은 계속)
+    unawaited(
+      ApiService.instance.checkServerHealth().then((r) {
+        SecureLog.d('[Api] health ok=${r.ok} ${r.message}');
+      }),
+    );
+  }
 
   await KakaoSdk.init(
     nativeAppKey: KakaoConfig.nativeAppKey,

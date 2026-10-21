@@ -41,6 +41,7 @@ dependencies:
   app_links: ^6.4.0
   kakao_flutter_sdk_user: ^2.0.1
   flutter_svg: ^2.3.0
+  dio: ^5.11.1
 
 dev_dependencies:
   flutter_test:

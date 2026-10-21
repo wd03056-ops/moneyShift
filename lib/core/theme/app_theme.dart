@@ -265,29 +265,29 @@ abstract final class AppTheme {
         foregroundColor: _charcoal,
         elevation: 0,
       ),
-      inputDecorationTheme: InputDecorationTheme(
+      inputDecorationTheme: const InputDecorationTheme(
         filled: false,
         fillColor: Colors.transparent,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
-          borderSide: const BorderSide(color: Color(0xFFE5E8EB), width: 1),
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        // 입력 중 밑줄(Underline) 제거
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+        labelStyle: TextStyle(
+          fontFamily: _font,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textPrimary,
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
-          borderSide: const BorderSide(color: Color(0xFFE5E8EB), width: 1),
+        hintStyle: TextStyle(
+          fontFamily: _font,
+          fontSize: 15,
+          fontWeight: FontWeight.w400,
+          color: AppColors.textSecondary,
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
-          borderSide: const BorderSide(color: _charcoal, width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
-          borderSide: const BorderSide(color: Color(0xFFDC2626)),
-        ),
-        labelStyle: theme.bodyMedium,
-        hintStyle: theme.bodyMedium,
       ),
       dividerTheme: const DividerThemeData(
         color: Color(0xFFE5E8EB),

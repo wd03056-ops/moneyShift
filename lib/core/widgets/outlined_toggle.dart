@@ -13,9 +13,10 @@ class OutlinedToggle extends StatelessWidget {
 
   static const Color onTrack = Color(0xFF34C759);
   static const Color offTrack = Color(0xFFE5E5EA);
-  static const double width = 48;
-  static const double height = 28;
-  static const double thumb = 24;
+  /// bodyLarge(~16) 옆 비율에 맞춘 콤팩트 사이즈
+  static const double width = 40;
+  static const double height = 22;
+  static const double thumb = 18;
 
   @override
   Widget build(BuildContext context) {

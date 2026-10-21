@@ -30,7 +30,6 @@ enum MemberRole {
         MemberRole.manager,
         MemberRole.staff,
         MemberRole.parttime,
-        MemberRole.worker,
       ];
 
   static MemberRole fromFirestore(String value) {

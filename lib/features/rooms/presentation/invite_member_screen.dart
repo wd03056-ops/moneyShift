@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_select_chip.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/models.dart';
 
-/// 목업: 직책 선택 후 초대 코드/링크 생성
+/// 직책 선택 시 초대 코드가 자동으로 바뀜 (직원ABC · 알바X7K1 …)
 class InviteMemberScreen extends StatefulWidget {
   const InviteMemberScreen({
     super.key,
@@ -23,30 +24,33 @@ class InviteMemberScreen extends StatefulWidget {
 
 class _InviteMemberScreenState extends State<InviteMemberScreen> {
   MemberRole _selectedRole = MemberRole.parttime;
-  RoomInviteModel? _createdInvite;
-  bool _submitting = false;
+  RoomInviteModel? _invite;
 
-  Future<void> _createInvite() async {
-    setState(() {
-      _submitting = true;
-      _createdInvite = null;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _selectRole(_selectedRole);
     });
+  }
 
+  void _selectRole(MemberRole role) {
     try {
-      final invite = MockStore.instance.createInvite(
+      final invite = MockStore.instance.ensureInviteForRole(
         roomId: widget.roomId,
-        role: _selectedRole,
-        validFor: const Duration(days: 7),
+        role: role,
       );
       if (!mounted) return;
-      setState(() => _createdInvite = invite);
+      setState(() {
+        _selectedRole = role;
+        _invite = invite;
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('초대 생성 실패: $e')),
+        SnackBar(content: Text('초대 불러오기 실패: $e')),
       );
-    } finally {
-      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -60,6 +64,9 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final invite = _invite;
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       appBar: AppBar(title: Text('${widget.roomName} 초대')),
       body: ScrollablePageBody(
@@ -69,13 +76,16 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '초대할 직책을 먼저 선택하세요',
-              style: Theme.of(context).textTheme.titleMedium,
+              '초대할 직책을 선택하세요',
+              style: textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             Text(
-              '초대 대상이 이 코드로 가입하면, 선택한 직책으로 자동 등록됩니다.',
-              style: Theme.of(context).textTheme.bodyMedium,
+              '직책을 누르면 초대 코드가 자동으로 바뀝니다. '
+              '이 코드로 가입하면 해당 직책으로 등록됩니다.',
+              style: textTheme.bodyMedium?.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -86,55 +96,41 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
                   AppSelectChip(
                     label: role.labelKo,
                     selected: _selectedRole == role,
-                    onTap: _submitting
-                        ? null
-                        : () => setState(() {
-                              _selectedRole = role;
-                              _createdInvite = null;
-                            }),
+                    onTap: () => _selectRole(role),
                   ),
               ],
             ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _submitting ? null : _createInvite,
-              child: _submitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('초대 코드 생성'),
-            ),
-            if (_createdInvite != null) ...[
-              const SizedBox(height: 32),
+            if (invite != null) ...[
+              const SizedBox(height: 28),
               const Divider(height: 1),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               Text(
-                '직책: ${_createdInvite!.role.labelKo}',
-                style: Theme.of(context).textTheme.titleMedium,
+                '직책: ${invite.role.labelKo}',
+                style: textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              Text('초대 코드', style: Theme.of(context).textTheme.labelMedium),
+              Text('초대 코드', style: textTheme.labelMedium),
               const SizedBox(height: 4),
               SelectableText(
-                _createdInvite!.code,
-                style: Theme.of(context).textTheme.titleLarge,
+                invite.code,
+                style: textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 16),
               Text(
                 '초대 링크 (카카오톡·문자 공유용)',
-                style: Theme.of(context).textTheme.labelMedium,
+                style: textTheme.labelMedium,
               ),
               const SizedBox(height: 4),
               SelectableText(
-                _createdInvite!.inviteLink,
-                style: Theme.of(context).textTheme.bodyMedium,
+                invite.inviteLink,
+                style: textTheme.bodyMedium,
               ),
               const SizedBox(height: 8),
               Text(
                 '앱이 있으면 바로 참여 화면으로, 없으면 스토어로 이동합니다.',
-                style: Theme.of(context).textTheme.bodySmall,
+                style: textTheme.bodySmall,
               ),
               const SizedBox(height: 16),
               Wrap(
@@ -142,13 +138,11 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
                 runSpacing: 8,
                 children: [
                   OutlinedButton(
-                    onPressed: () =>
-                        _copy(_createdInvite!.code, '초대 코드'),
+                    onPressed: () => _copy(invite.code, '초대 코드'),
                     child: const Text('코드 복사'),
                   ),
                   OutlinedButton(
-                    onPressed: () =>
-                        _copy(_createdInvite!.inviteLink, '초대 링크'),
+                    onPressed: () => _copy(invite.inviteLink, '초대 링크'),
                     child: const Text('링크 복사'),
                   ),
                 ],

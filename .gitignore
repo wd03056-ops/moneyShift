@@ -1,15 +1,91 @@
-# Node / Vercel API
+# =============================================================================
+# Secrets / 환경변수 · 키스토어
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+*.pem
+**/key.properties
+**/kakao.properties
+**/Kakao-Keys.xcconfig
+
+# =============================================================================
+# Flutter / Dart
+# =============================================================================
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+/coverage/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json
+
+# =============================================================================
+# Node.js / Vercel (api/)
+# =============================================================================
 node_modules/
 .vercel/
 npm-debug.log*
 yarn-error.log*
+package-lock.json.bak
 
-# Miscellaneous
+# =============================================================================
+# Android
+# =============================================================================
+android/.gradle/
+android/captures/
+android/local.properties
+android/**/build/
+android/app/build/
+android/app/debug/
+android/app/profile/
+android/app/release/
+*.apk
+*.aab
+
+# =============================================================================
+# iOS
+# =============================================================================
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/ServiceDefinitions.json
+**/DerivedData/
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# =============================================================================
+# IDE / OS
+# =============================================================================
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# Misc
+# =============================================================================
 *.class
 *.log
 *.pyc
 *.swp
-.DS_Store
 .atom/
 .build/
 .buildlog/
@@ -17,35 +93,3 @@ yarn-error.log*
 .svn/
 .swiftpm/
 migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-/coverage/
-
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release

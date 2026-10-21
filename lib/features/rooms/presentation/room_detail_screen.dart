@@ -188,9 +188,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                         label: '내 근무표',
                       ),
                       NavigationDestination(
-                        icon: Icon(Icons.payments_outlined),
-                        selectedIcon: Icon(Icons.payments),
-                        label: '급여·정보',
+                        icon: Icon(Icons.person_outline),
+                        selectedIcon: Icon(Icons.person),
+                        label: '내 정보',
                       ),
                     ],
             ),

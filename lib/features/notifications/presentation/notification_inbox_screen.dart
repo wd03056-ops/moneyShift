@@ -364,7 +364,7 @@ class _EmptyInboxState extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '근무 배정·교대 요청이 오면 여기에 표시됩니다.\n아래로 당겨 새로고침 할 수 있어요.',
+            '새로운 소식이 오면 모아둘게요.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textSecondary,
                   height: 1.45,

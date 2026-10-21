@@ -4,14 +4,12 @@ import '../../../core/navigation/app_navigation.dart';
 import '../../../core/navigation/app_route_names.dart';
 import '../../../core/navigation/room_navigation.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/time/kst_date_time.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../mock/app_listenables.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/models.dart';
-import '../../notifications/presentation/notification_bell_button.dart';
 import '../widgets/room_role_badge.dart';
 import 'create_room_screen.dart';
 import 'join_room_screen.dart';
@@ -201,7 +199,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 }
 
-/// 상태바 아래 고정 — 제목 + 알림 벨 (중첩 Scaffold AppBar 대체)
+/// 상태바 아래 고정 — 제목 (중첩 Scaffold AppBar 대체)
 class _HomeAppBar extends StatelessWidget {
   const _HomeAppBar();
 
@@ -210,21 +208,17 @@ class _HomeAppBar extends StatelessWidget {
     return SizedBox(
       height: kToolbarHeight,
       child: Padding(
-        padding: const EdgeInsets.only(left: 20, right: 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '홈',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const NotificationBellButton(),
-          ],
+        padding: const EdgeInsets.only(left: 20, right: 20),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            '근무일지',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );
@@ -293,30 +287,17 @@ class _HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hour = KstDateTime.now().hour;
-    final greeting = hour < 18 ? '안녕하세요' : '수고하셨어요';
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            greeting,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '$displayName 님',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+      child: Text(
+        '$displayName 님',
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

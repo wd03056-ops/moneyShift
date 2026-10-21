@@ -5,6 +5,8 @@ import '../../../core/navigation/notification_deep_link.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
+import '../../../data/config/api_config.dart';
+import '../../../data/services/api_service.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../mock/mock_user.dart';
@@ -74,6 +76,11 @@ class NotificationTestScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
+            _TestButton(
+              label: '0. [API] 서버 헬스체크',
+              subtitle: ApiConfig.baseUrl,
+              onPressed: () => _checkApiHealth(context),
+            ),
             _TestButton(
               label: '1. [직원 등록]',
               subtitle: '수신: 사장님',
@@ -370,6 +377,22 @@ class NotificationTestScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  static Future<void> _checkApiHealth(BuildContext context) async {
+    final result = await ApiService.instance.checkServerHealth();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.ok
+              ? 'API OK · ${ApiConfig.baseUrl}\n${result.message}'
+              : 'API 실패 · ${ApiConfig.baseUrl}\n${result.message}',
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: result.ok ? AppColors.success : AppColors.holiday,
       ),
     );
   }
