@@ -328,10 +328,15 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
                           child: Center(
                             child: TextField(
                               controller: _nameController,
+                              autocorrect: false,
+                              enableSuggestions: false,
+                              spellCheckConfiguration:
+                                  const SpellCheckConfiguration.disabled(),
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 color: Color(0xFF191F28),
+                                decoration: TextDecoration.none,
                               ),
                               decoration: _fieldDecoration('매장 이름'),
                               onChanged: (value) {
@@ -373,10 +378,15 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
                         child: Center(
                           child: TextField(
                             controller: _addressController,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            spellCheckConfiguration:
+                                const SpellCheckConfiguration.disabled(),
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                               color: Color(0xFF191F28),
+                              decoration: TextDecoration.none,
                             ),
                             decoration: _fieldDecoration('주소 또는 장소명'),
                             textInputAction: TextInputAction.search,

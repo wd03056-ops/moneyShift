@@ -143,23 +143,15 @@ class _ShiftSwapRequestSheetState extends State<_ShiftSwapRequestSheet> {
           const SizedBox(height: 8),
           AppBorderedField(
             height: null,
-            child: TextField(
+            child: AppPlainTextField(
               controller: _reasonCtrl,
               enabled: !_submitting,
               maxLines: 3,
               minLines: 2,
-              decoration: const InputDecoration(
-                hintText: '예: 개인 사정으로 근무가 어렵습니다.',
-                filled: false,
-                isDense: true,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-              ),
+              hintText: '예: 개인 사정으로 근무가 어렵습니다.',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
             ),
           ),
           const SizedBox(height: 20),

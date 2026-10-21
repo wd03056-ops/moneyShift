@@ -115,6 +115,141 @@ class ApiService {
   }) {
     return _dio.delete<T>(path, data: data, options: options);
   }
+
+  /// `DELETE /api/account` — 서버 DB 익명화·언링크
+  Future<AccountDeletionApiResult> deleteAccount({
+    required String userId,
+    String authProvider = 'kakao',
+    String? kakaoAccessToken,
+  }) async {
+    final payload = <String, dynamic>{
+      'userId': userId,
+      'authProvider': authProvider,
+      'confirm': true,
+      if (kakaoAccessToken != null && kakaoAccessToken.isNotEmpty)
+        'kakaoAccessToken': kakaoAccessToken,
+    };
+    try {
+      final res = await _dio.delete<Map<String, dynamic>>(
+        '/api/account',
+        data: payload,
+        options: Options(
+          headers: {
+            'X-User-Id': userId,
+            'X-Auth-Provider': authProvider,
+            if (kakaoAccessToken != null && kakaoAccessToken.isNotEmpty)
+              'Authorization': 'Bearer $kakaoAccessToken',
+          },
+        ),
+      );
+      final data = res.data ?? const <String, dynamic>{};
+      // stub 모드는 더 이상 성공으로 치지 않음 — firestore 실연동만 OK
+      final mode = data['mode']?.toString();
+      final ok = (res.statusCode == 200) &&
+          data['ok'] == true &&
+          (mode == null || mode == 'firestore');
+      if (!ok && (res.statusCode == 404 || res.statusCode == 405)) {
+        // 일부 환경에서 DELETE 미지원 → POST fallback
+        return _deleteAccountPost(payload, userId, authProvider, kakaoAccessToken);
+      }
+      return AccountDeletionApiResult(
+        ok: ok,
+        statusCode: res.statusCode,
+        mode: mode,
+        message: data['message']?.toString() ??
+            (ok
+                ? 'OK'
+                : (data['error']?.toString() ?? 'status=${res.statusCode}')),
+        body: data,
+      );
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404 || e.response?.statusCode == 405) {
+        return _deleteAccountPost(payload, userId, authProvider, kakaoAccessToken);
+      }
+      debugPrint('[ApiService] deleteAccount FAIL: ${e.message}');
+      final body = e.response?.data;
+      var msg = e.message ?? '연결 실패';
+      if (body is Map && body['message'] != null) {
+        msg = body['message'].toString();
+      }
+      return AccountDeletionApiResult(
+        ok: false,
+        statusCode: e.response?.statusCode,
+        mode: body is Map ? body['mode']?.toString() : null,
+        message: msg,
+        body: body is Map<String, dynamic>
+            ? body
+            : const <String, dynamic>{},
+      );
+    } catch (e) {
+      debugPrint('[ApiService] deleteAccount FAIL: $e');
+      return AccountDeletionApiResult(ok: false, message: '$e');
+    }
+  }
+
+  Future<AccountDeletionApiResult> _deleteAccountPost(
+    Map<String, dynamic> payload,
+    String userId,
+    String authProvider,
+    String? kakaoAccessToken,
+  ) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/account/delete',
+        data: payload,
+        options: Options(
+          headers: {
+            'X-User-Id': userId,
+            'X-Auth-Provider': authProvider,
+            if (kakaoAccessToken != null && kakaoAccessToken.isNotEmpty)
+              'Authorization': 'Bearer $kakaoAccessToken',
+          },
+        ),
+      );
+      final data = res.data ?? const <String, dynamic>{};
+      final mode = data['mode']?.toString();
+      final ok = (res.statusCode == 200) &&
+          data['ok'] == true &&
+          (mode == null || mode == 'firestore');
+      return AccountDeletionApiResult(
+        ok: ok,
+        statusCode: res.statusCode,
+        mode: mode,
+        message: data['message']?.toString() ??
+            (ok
+                ? 'OK'
+                : (data['error']?.toString() ?? 'status=${res.statusCode}')),
+        body: data,
+      );
+    } on DioException catch (e) {
+      final body = e.response?.data;
+      String msg = e.message ?? '연결 실패';
+      if (body is Map && body['message'] != null) {
+        msg = body['message'].toString();
+      }
+      return AccountDeletionApiResult(
+        ok: false,
+        statusCode: e.response?.statusCode,
+        message: msg,
+      );
+    }
+  }
+}
+
+class AccountDeletionApiResult {
+  const AccountDeletionApiResult({
+    required this.ok,
+    this.statusCode,
+    this.mode,
+    this.message = '',
+    this.body = const {},
+  });
+
+  final bool ok;
+  final int? statusCode;
+  final String? mode;
+  final String message;
+  final Map<String, dynamic> body;
 }
 
 class ApiHealthResult {

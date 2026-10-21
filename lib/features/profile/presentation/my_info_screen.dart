@@ -11,6 +11,7 @@ import '../../../mock/app_listenables.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../mock/mock_user.dart';
+import '../../auth/data/account_deletion_service.dart';
 import '../../legal/legal_document_screen.dart';
 import '../../legal/legal_texts.dart';
 import '../../notifications/presentation/notification_test_screen.dart';
@@ -40,6 +41,35 @@ class MyInfoScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _confirmLogout(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('로그아웃'),
+        content: const Text('이 계정에서 로그아웃할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('로그아웃'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    await AccountDeletionService.instance.logout();
+  }
+
   Future<void> _confirmDeleteAccount(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -48,7 +78,9 @@ class MyInfoScreen extends StatelessWidget {
         surfaceTintColor: Colors.transparent,
         title: const Text('계정 삭제'),
         content: const Text(
-          '계정을 삭제하면 프로필·소속 매장·근무·출퇴근 기록이 삭제되며 '
+          '계정을 삭제하면 소셜 로그인 연동이 해제되고, '
+          '프로필·푸시 토큰 등 개인정보가 파기됩니다.\n\n'
+          '매장의 근무·급여 기록은 \'(탈퇴한 회원)\'으로 남으며 '
           '복구할 수 없습니다.\n\n계속하시겠습니까?',
         ),
         actions: [
@@ -67,10 +99,38 @@ class MyInfoScreen extends StatelessWidget {
       ),
     );
     if (ok != true || !context.mounted) return;
-    Navigator.of(context, rootNavigator: true).popUntil((r) => r.isFirst);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      MockSession.instance.deleteAccount();
-    });
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final result =
+          await AccountDeletionService.instance.deleteCurrentAccount();
+      if (!result.ok && context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: result.ok ? null : AppColors.holiday,
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('계정 삭제 실패: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.holiday,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -229,14 +289,7 @@ class MyInfoScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 AppCard(
-                  onTap: () {
-                    // 스택 정리 후 로그아웃 — MaterialApp remount / dependents 깨짐 방지
-                    Navigator.of(context, rootNavigator: true)
-                        .popUntil((r) => r.isFirst);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      MockSession.instance.logout();
-                    });
-                  },
+                  onTap: () => _confirmLogout(context),
                   child: Text(
                     '로그아웃',
                     style: textTheme.bodyLarge?.copyWith(

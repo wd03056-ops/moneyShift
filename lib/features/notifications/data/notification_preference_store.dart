@@ -36,9 +36,9 @@ enum NotificationCategory {
   String get subtitleKo {
     switch (this) {
       case NotificationCategory.schedule:
-        return '배정·일정 변경·대타·근무 확인';
+        return '배정·확인·일정 변경·대타·결근·직원 등록';
       case NotificationCategory.commute:
-        return '출·퇴근·근태 수정 관련';
+        return '출·퇴근·근태 수정 요청·결과';
       case NotificationCategory.notice:
         return '매장 공지사항';
     }
@@ -143,29 +143,67 @@ class NotificationPreferenceStore extends ChangeNotifier {
         .every((c) => isCategoryEnabled(userId, c));
   }
 
+  /// 카테고리 on/off. 실패 시 이전 값으로 롤백하고 false.
+  ///
+  /// - 켤 때 시스템 권한 거부 → false (토글은 꺼진 상태 유지)
+  /// - SharedPreferences 저장 실패 → 이전 값 복구 + false
+  /// - Firestore 동기화 실패 → 로컬은 유지, true (소프트 실패, 로그만)
   Future<bool> setCategoryEnabled({
     required String userId,
     required NotificationCategory category,
     required bool enabled,
   }) async {
     if (userId.isEmpty) return false;
+    await ensureLoaded();
+
+    final previous = isCategoryEnabled(userId, category);
+    if (previous == enabled) return true;
 
     if (enabled) {
       final ok = await ensureSystemPermission();
       if (!ok) {
-        debugPrint('[NotifPref] system permission denied');
-        _cache.putIfAbsent(userId, () => {})[category] = false;
-        notifyListeners();
+        debugPrint('[NotifPref] system permission denied → keep OFF');
+        _applyLocal(userId, category, false);
         await _persistCategory(userId, category, false);
         return false;
       }
     }
 
+    // 낙관적 UI 반영
+    _applyLocal(userId, category, enabled);
+
+    final saved = await _persistCategory(userId, category, enabled);
+    if (!saved) {
+      debugPrint(
+        '[NotifPref] persist FAIL → rollback '
+        '${category.prefsKey} $enabled → $previous',
+      );
+      _applyLocal(userId, category, previous);
+      return false;
+    }
+
+    final synced = await _syncFirestoreCategories(userId);
+    if (!synced) {
+      debugPrint(
+        '[NotifPref] Firestore sync soft-fail '
+        '(local OK) ${category.prefsKey}=$enabled',
+      );
+    }
+
+    debugPrint(
+      '[NotifPref] OK uid=$userId ${category.prefsKey}=$enabled '
+      'firestoreSynced=$synced',
+    );
+    return true;
+  }
+
+  void _applyLocal(
+    String userId,
+    NotificationCategory category,
+    bool enabled,
+  ) {
     _cache.putIfAbsent(userId, () => {})[category] = enabled;
     notifyListeners();
-    await _persistCategory(userId, category, enabled);
-    await _syncFirestoreCategories(userId);
-    return true;
   }
 
   /// 레거시: 전 카테고리 일괄
@@ -191,30 +229,30 @@ class NotificationPreferenceStore extends ChangeNotifier {
     return true;
   }
 
-  Future<void> _persistCategory(
+  Future<bool> _persistCategory(
     String userId,
     NotificationCategory category,
     bool enabled,
   ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(
+      final ok = await prefs.setBool(
         '$_catPrefix${userId}_${category.prefsKey}',
         enabled,
       );
-      debugPrint(
-        '[NotifPref] uid=$userId ${category.prefsKey}=$enabled',
-      );
+      return ok;
     } catch (e, st) {
       debugPrint('[NotifPref] save FAIL: $e');
       debugPrint('$st');
+      return false;
     }
   }
 
-  Future<void> _syncFirestoreCategories(String userId) async {
-    if (!FirebaseBootstrap.isInitialized) return;
+  /// Firestore `users/{uid}.notificationCategories` 동기화. 미초기화·비로그인 시 true(스킵).
+  Future<bool> _syncFirestoreCategories(String userId) async {
+    if (!FirebaseBootstrap.isInitialized) return true;
     final authUid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
-    if (authUid == null || authUid != userId) return;
+    if (authUid == null || authUid != userId) return true;
     try {
       final cats = {
         for (final c in NotificationCategory.values)
@@ -228,10 +266,30 @@ class NotificationPreferenceStore extends ChangeNotifier {
         'isNotificationEnabled': isEnabled(userId),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      return true;
     } catch (e, st) {
       debugPrint('[NotifPref] Firestore sync FAIL: $e');
       debugPrint('$st');
+      return false;
     }
+  }
+
+  /// 탈퇴·로컬 초기화 시 메모리 캐시만 비움 (prefs는 LocalDataCleaner가 clear)
+  void clearMemoryCache() {
+    _cache.clear();
+    _loaded = false;
+    notifyListeners();
+  }
+
+  /// 디버그/테스트용 — 카테고리별 on/off 요약
+  String debugSummary(String userId) {
+    if (userId.isEmpty) return '(no uid)';
+    return NotificationCategory.values
+        .map(
+          (c) =>
+              '${c.titleKo}:${isCategoryEnabled(userId, c) ? 'ON' : 'OFF'}',
+        )
+        .join(' · ');
   }
 
   Future<bool> ensureSystemPermission() async {
@@ -261,6 +319,13 @@ class NotificationPreferenceStore extends ChangeNotifier {
     required String type,
   }) {
     final cat = NotificationCategory.fromFirestoreType(type);
-    return isCategoryEnabled(userId, cat);
+    final ok = isCategoryEnabled(userId, cat);
+    if (!ok) {
+      debugPrint(
+        '[NotifPref] block deliver uid=$userId type=$type '
+        'category=${cat.prefsKey}',
+      );
+    }
+    return ok;
   }
 }

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/constants/app_constants.dart';
 import '../core/constants/firestore_paths.dart';
 import '../models/enums/member_role.dart';
 import '../models/user_model.dart';
@@ -139,6 +140,84 @@ class UserFirestoreService {
       );
       debugPrint('$st');
       rethrow;
+    }
+  }
+
+  /// 탈퇴 — 개인정보 익명화 (rules: users delete 불가 → merge update)
+  Future<void> anonymizeForDeletion(String uid) async {
+    const deletedName = AppConstants.deletedMemberDisplayName;
+    try {
+      final ref = _col.doc(uid);
+      await ref.set({
+        'uid': uid,
+        'email': '',
+        'displayName': deletedName,
+        'realName': FieldValue.delete(),
+        'phoneNumber': FieldValue.delete(),
+        'kakaoId': FieldValue.delete(),
+        'googleId': FieldValue.delete(),
+        'profileImageUrl': FieldValue.delete(),
+        'fcmToken': FieldValue.delete(),
+        'fcmTokens': <String>[],
+        'fcmTokenUpdatedAt': FieldValue.delete(),
+        'notificationCategories': FieldValue.delete(),
+        'isNotificationEnabled': false,
+        'authProvider': 'deleted',
+        'accountDeleted': true,
+        'deletedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // 인앱 알림함 비우기 (최대 200건)
+      try {
+        final notifs = await ref.collection(FirestorePaths.notifications).limit(200).get();
+        for (final doc in notifs.docs) {
+          await doc.reference.delete();
+        }
+      } catch (e) {
+        debugPrint('[UserFirestore] notif clear soft-fail: $e');
+      }
+
+      // 소속 멤버십 표시명 익명화
+      await _anonymizeMemberships(uid, deletedName);
+
+      debugPrint('[UserFirestore] anonymizeForDeletion ok uid=$uid');
+    } on FirebaseException catch (e, st) {
+      debugPrint(
+        '[UserFirestore] anonymizeForDeletion FAIL uid=$uid '
+        'code=${e.code} message=${e.message}',
+      );
+      debugPrint('$st');
+      rethrow;
+    }
+  }
+
+  Future<void> _anonymizeMemberships(String uid, String deletedName) async {
+    Future<void> patchCollection(String collection) async {
+      final q = await _db
+          .collection(collection)
+          .where('userId', isEqualTo: uid)
+          .get();
+      for (final doc in q.docs) {
+        await doc.reference.set({
+          'displayName': deletedName,
+          'isActive': false,
+          'accountDeleted': true,
+          'linkedUserId': null,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
+
+    try {
+      await patchCollection(FirestorePaths.roomMembers);
+    } catch (e) {
+      debugPrint('[UserFirestore] room_members anonymize soft-fail: $e');
+    }
+    try {
+      await patchCollection(FirestorePaths.storeMembers);
+    } catch (e) {
+      debugPrint('[UserFirestore] store_members anonymize soft-fail: $e');
     }
   }
 }

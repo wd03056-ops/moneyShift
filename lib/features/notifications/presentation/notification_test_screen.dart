@@ -13,6 +13,7 @@ import '../../../mock/mock_user.dart';
 import '../../../models/enums/notification_type.dart';
 import '../../../services/local_notification_service.dart';
 import '../data/mock_notification_repository.dart';
+import '../data/notification_preference_store.dart';
 import '../domain/app_notification_dispatcher.dart';
 import '../domain/notification_router.dart';
 import '../domain/notification_templates.dart';
@@ -75,15 +76,34 @@ class NotificationTestScreen extends StatelessWidget {
                 color: AppColors.textSecondary,
               ),
             ),
+            const SizedBox(height: 12),
+            const _PreferenceStatusCard(),
+            const SizedBox(height: 16),
+            Text(
+              '토글 OFF인 카테고리는 알림함·로컬 푸시가 스킵됩니다. '
+              '설정에서 켠 뒤 다시 테스트하세요.',
+              style: textTheme.bodySmall?.copyWith(
+                color: AppColors.textSecondary,
+                height: 1.35,
+              ),
+            ),
             const SizedBox(height: 20),
             _TestButton(
               label: '0. [API] 서버 헬스체크',
               subtitle: ApiConfig.baseUrl,
               onPressed: () => _checkApiHealth(context),
             ),
+            Text(
+              '— 근무 알림 —',
+              style: textTheme.labelMedium?.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
             _TestButton(
               label: '1. [직원 등록]',
-              subtitle: '수신: 사장님',
+              subtitle: '근무 알림 · 수신: 사장님',
               onPressed: () => _run(
                 context,
                 recipientLabel: '사장님 (${owner.displayName})',
@@ -101,7 +121,7 @@ class NotificationTestScreen extends StatelessWidget {
             ),
             _TestButton(
               label: '2. [근무 배정]',
-              subtitle: '수신: 알바생',
+              subtitle: '근무 알림 · 수신: 직원',
               onPressed: () => _run(
                 context,
                 recipientLabel: '직원 (${staff.displayName})',
@@ -120,8 +140,30 @@ class NotificationTestScreen extends StatelessWidget {
               ),
             ),
             _TestButton(
+              label: '2-b. [근무 확인]',
+              subtitle: '근무 알림 · 수신: 사장님',
+              onPressed: () => _run(
+                context,
+                recipientLabel: '사장님 (${owner.displayName})',
+                targetUids: [owner.uid],
+                type: NotificationType.scheduleConfirmed,
+                title: NotificationTemplates.scheduleConfirmedTitle,
+                body: NotificationTemplates.scheduleConfirmedBody(
+                  staff.displayName,
+                ),
+                storeId: storeId,
+                data: const {'scheduleId': 'test_schedule'},
+                trigger: () => AppNotificationDispatcher.scheduleConfirmed(
+                  ownerUid: owner.uid,
+                  staffDisplayName: staff.displayName,
+                  storeId: storeId,
+                  scheduleId: 'test_schedule',
+                ),
+              ),
+            ),
+            _TestButton(
               label: '3. [일정 변경 요청]',
-              subtitle: '수신: 사장님',
+              subtitle: '근무 알림 · 수신: 사장님',
               onPressed: () => _run(
                 context,
                 recipientLabel: '사장님 (${owner.displayName})',
@@ -147,7 +189,7 @@ class NotificationTestScreen extends StatelessWidget {
             ),
             _TestButton(
               label: '4. [일정 변경 결과] 승인',
-              subtitle: '수신: 알바생',
+              subtitle: '근무 알림 · 수신: 직원',
               onPressed: () => _run(
                 context,
                 recipientLabel: '직원 (${staff.displayName})',
@@ -172,7 +214,7 @@ class NotificationTestScreen extends StatelessWidget {
             ),
             _TestButton(
               label: '4-b. [일정 변경 결과] 거절',
-              subtitle: '수신: 알바생',
+              subtitle: '근무 알림 · 수신: 직원',
               onPressed: () => _run(
                 context,
                 recipientLabel: '직원 (${staff.displayName})',
@@ -197,7 +239,7 @@ class NotificationTestScreen extends StatelessWidget {
             ),
             _TestButton(
               label: '5-1. [대타 요청]',
-              subtitle: '수신: 동료 알바생 B',
+              subtitle: '근무 알림 · 수신: 동료',
               onPressed: () => _run(
                 context,
                 recipientLabel: '직원 B (${staff2.displayName})',
@@ -222,7 +264,7 @@ class NotificationTestScreen extends StatelessWidget {
             ),
             _TestButton(
               label: '5-2. [대타 승인 요청]',
-              subtitle: '수신: 사장님',
+              subtitle: '근무 알림 · 수신: 사장님',
               onPressed: () => _run(
                 context,
                 recipientLabel: '사장님 (${owner.displayName})',
@@ -252,7 +294,7 @@ class NotificationTestScreen extends StatelessWidget {
             ),
             _TestButton(
               label: '5-3. [대타 확정]',
-              subtitle: '수신: 알바 A · B',
+              subtitle: '근무 알림 · 수신: 직원 A·B',
               onPressed: () => _run(
                 context,
                 recipientLabel:
@@ -273,8 +315,37 @@ class NotificationTestScreen extends StatelessWidget {
               ),
             ),
             _TestButton(
-              label: '6. [출·퇴근] 출근',
-              subtitle: '수신: 사장님',
+              label: '6. [결근 처리]',
+              subtitle: '근무 알림 · 수신: 직원',
+              onPressed: () => _run(
+                context,
+                recipientLabel: '직원 (${staff.displayName})',
+                targetUids: [staff.uid],
+                type: NotificationType.absent,
+                title: NotificationTemplates.absentTitle,
+                body: NotificationTemplates.absentBody(storeName),
+                storeId: storeId,
+                data: const {'scheduleId': 'test_schedule'},
+                trigger: () => AppNotificationDispatcher.scheduleAbsent(
+                  workerUid: staff.uid,
+                  storeName: storeName,
+                  storeId: storeId,
+                  scheduleId: 'test_schedule',
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '— 출퇴근 알림 —',
+              style: textTheme.labelMedium?.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _TestButton(
+              label: '7. [출·퇴근] 출근',
+              subtitle: '출퇴근 알림 · 수신: 사장님',
               onPressed: () => _run(
                 context,
                 recipientLabel: '사장님 (${owner.displayName})',
@@ -296,8 +367,8 @@ class NotificationTestScreen extends StatelessWidget {
               ),
             ),
             _TestButton(
-              label: '6-b. [출·퇴근] 퇴근',
-              subtitle: '수신: 사장님',
+              label: '7-b. [출·퇴근] 퇴근',
+              subtitle: '출퇴근 알림 · 수신: 사장님',
               onPressed: () => _run(
                 context,
                 recipientLabel: '사장님 (${owner.displayName})',
@@ -319,28 +390,94 @@ class NotificationTestScreen extends StatelessWidget {
               ),
             ),
             _TestButton(
-              label: '7. [결근 처리]',
-              subtitle: '수신: 알바생',
+              label: '7-c. [근태 수정 요청]',
+              subtitle: '출퇴근 알림 · 수신: 직원',
               onPressed: () => _run(
                 context,
                 recipientLabel: '직원 (${staff.displayName})',
                 targetUids: [staff.uid],
-                type: NotificationType.absent,
-                title: NotificationTemplates.absentTitle,
-                body: NotificationTemplates.absentBody(storeName),
+                type: NotificationType.commuteCorrection,
+                title: NotificationTemplates.commuteCorrectionRequestTitle,
+                body: NotificationTemplates.commuteCorrectionRequestBody(
+                  storeName,
+                ),
                 storeId: storeId,
-                data: const {'scheduleId': 'test_schedule'},
-                trigger: () => AppNotificationDispatcher.scheduleAbsent(
+                data: const {'requestId': 'test_correction'},
+                trigger: () =>
+                    AppNotificationDispatcher.commuteCorrectionRequested(
                   workerUid: staff.uid,
                   storeName: storeName,
                   storeId: storeId,
-                  scheduleId: 'test_schedule',
+                  requestId: 'test_correction',
                 ),
               ),
             ),
             _TestButton(
+              label: '7-d. [근태 수정 결과] 승인',
+              subtitle: '출퇴근 알림 · 수신: 사장님',
+              onPressed: () => _run(
+                context,
+                recipientLabel: '사장님 (${owner.displayName})',
+                targetUids: [owner.uid],
+                type: NotificationType.commuteCorrectionResult,
+                title: NotificationTemplates.commuteCorrectionApprovedTitle,
+                body: NotificationTemplates.commuteCorrectionApprovedBody(
+                  staff.displayName,
+                ),
+                storeId: storeId,
+                data: const {
+                  'requestId': 'test_correction',
+                  'approved': 'true',
+                },
+                trigger: () =>
+                    AppNotificationDispatcher.commuteCorrectionResult(
+                  ownerUid: owner.uid,
+                  staffDisplayName: staff.displayName,
+                  approved: true,
+                  storeId: storeId,
+                  requestId: 'test_correction',
+                ),
+              ),
+            ),
+            _TestButton(
+              label: '7-e. [근태 수정 결과] 거절',
+              subtitle: '출퇴근 알림 · 수신: 사장님',
+              onPressed: () => _run(
+                context,
+                recipientLabel: '사장님 (${owner.displayName})',
+                targetUids: [owner.uid],
+                type: NotificationType.commuteCorrectionResult,
+                title: NotificationTemplates.commuteCorrectionRejectedTitle,
+                body: NotificationTemplates.commuteCorrectionRejectedBody(
+                  staff.displayName,
+                ),
+                storeId: storeId,
+                data: const {
+                  'requestId': 'test_correction',
+                  'approved': 'false',
+                },
+                trigger: () =>
+                    AppNotificationDispatcher.commuteCorrectionResult(
+                  ownerUid: owner.uid,
+                  staffDisplayName: staff.displayName,
+                  approved: false,
+                  storeId: storeId,
+                  requestId: 'test_correction',
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '— 공지 알림 —',
+              style: textTheme.labelMedium?.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _TestButton(
               label: '8. [매장 공지사항]',
-              subtitle: '수신: 매장 전체 직원',
+              subtitle: '공지 알림 · 수신: 매장 전체 직원',
               onPressed: () {
                 final staffUids = MockUser.demoStaffRoster.map((e) => e.uid);
                 _run(
@@ -365,7 +502,7 @@ class NotificationTestScreen extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: () => _verifyAllRoutes(context, storeId),
               icon: const Icon(Icons.route_outlined, size: 18),
-              label: const Text('8종 라우트 매핑 검증'),
+              label: const Text('전체 타입 라우트 매핑 검증'),
             ),
             const SizedBox(height: 12),
             Text(
@@ -408,6 +545,20 @@ class NotificationTestScreen extends StatelessWidget {
     required VoidCallback trigger,
     Map<String, String> data = const {},
   }) async {
+    final prefs = NotificationPreferenceStore.instance;
+    await prefs.ensureLoaded();
+
+    final typeKey = type.firestoreValue;
+    final category = NotificationCategory.fromType(type);
+    final allowed = targetUids
+        .where((uid) => prefs.shouldDeliver(userId: uid, type: typeKey))
+        .toList();
+    final blocked = targetUids.where((uid) => !allowed.contains(uid)).toList();
+
+    final currentUid = MockSession.instance.currentUser?.uid;
+    final currentAllows = currentUid != null &&
+        prefs.shouldDeliver(userId: currentUid, type: typeKey);
+
     final link = NotificationDeepLink.fromType(
       type: type,
       storeId: storeId,
@@ -433,6 +584,27 @@ class NotificationTestScreen extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                '카테고리: ${category.titleKo} '
+                '(${category.prefsKey})',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              Text(
+                '허용 ${allowed.length}명 · 차단(토글 OFF) ${blocked.length}명',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: blocked.isEmpty
+                          ? AppColors.success
+                          : AppColors.holiday,
+                    ),
+              ),
+              if (currentUid != null)
+                Text(
+                  '이 기기(로그인) 수신: ${currentAllows ? 'ON' : 'OFF'}',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
               const SizedBox(height: 12),
               Text(
                 'Title',
@@ -454,14 +626,6 @@ class NotificationTestScreen extends StatelessWidget {
                 'type: ${type.firestoreValue}',
                 style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                       color: AppColors.textCaption,
-                    ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'targetRoute: ${link.uriString}',
-                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
                     ),
               ),
             ],
@@ -490,27 +654,41 @@ class NotificationTestScreen extends StatelessWidget {
       return;
     }
 
+    // Dispatcher가 shouldDeliver로 알림함 적재 필터링
     trigger();
 
-    await LocalNotificationService.instance.show(
-      title: title,
-      body: body,
-      type: type,
-      storeId: storeId,
-      data: data,
-    );
+    // 로컬 푸시는 "이 기기 로그인 계정" 카테고리가 ON일 때만
+    var localSent = false;
+    if (currentAllows) {
+      await LocalNotificationService.instance.show(
+        title: title,
+        body: body,
+        type: type,
+        storeId: storeId,
+        data: data,
+      );
+      localSent = true;
+    } else {
+      debugPrint(
+        '[NotifTest] skip local push — current user '
+        '${category.titleKo} OFF',
+      );
+    }
 
     if (!context.mounted) return;
+    final summary = allowed.isEmpty
+        ? '수신자 전원 토글 OFF → 알림함·푸시 스킵'
+        : '알림함 ${allowed.length}명'
+            '${localSent ? ' · 로컬 푸시 OK' : ' · 로컬 푸시 스킵(이 기기 OFF)'}';
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(
-            '발송 완료 → $recipientLabel\n${link.targetRoute}',
-            maxLines: 3,
-          ),
+          content: Text(summary, maxLines: 3),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 3),
+          backgroundColor:
+              allowed.isEmpty ? AppColors.holiday : AppColors.success,
           action: SnackBarAction(
             label: '이동',
             onPressed: () => NotificationRouter.openDeepLink(link),
@@ -534,8 +712,10 @@ class NotificationTestScreen extends StatelessWidget {
       NotificationType.subRequest: NotificationRoutes.substituteAccept,
       NotificationType.subAccept: NotificationRoutes.substituteApprove,
       NotificationType.subConfirm: NotificationRoutes.schedule,
-      NotificationType.commute: NotificationRoutes.commuteHistory,
       NotificationType.absent: NotificationRoutes.myAttendance,
+      NotificationType.commute: NotificationRoutes.commuteHistory,
+      NotificationType.commuteCorrection: NotificationRoutes.commuteCorrection,
+      NotificationType.commuteCorrectionResult: NotificationRoutes.commuteHistory,
       NotificationType.notice: NotificationRoutes.noticeDetail,
     };
 
@@ -575,7 +755,7 @@ class NotificationTestScreen extends StatelessWidget {
         content: SingleChildScrollView(
           child: Text(
             ok
-                ? '8종 type → targetRoute 매핑 OK\n'
+                ? '${expected.length}종 type → targetRoute 매핑 OK\n'
                     'Mock 알림함 targetRoute/params OK\n\n'
                     '${expected.entries.map((e) => '• ${e.key.firestoreValue} → ${e.value}').join('\n')}'
                 : failures.join('\n'),
@@ -596,6 +776,79 @@ class NotificationTestScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 로그인 계정의 카테고리 토글 상태 (실시간)
+class _PreferenceStatusCard extends StatelessWidget {
+  const _PreferenceStatusCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        MockSession.instance,
+        NotificationPreferenceStore.instance,
+      ]),
+      builder: (context, _) {
+        final uid = MockSession.instance.currentUser?.uid;
+        final prefs = NotificationPreferenceStore.instance;
+        final textTheme = Theme.of(context).textTheme;
+
+        return AppCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '수신 설정 (현재 계정)',
+                style: textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (uid == null)
+                Text(
+                  '로그인 없음',
+                  style: textTheme.bodySmall,
+                )
+              else ...[
+                for (final cat in NotificationCategory.values)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            cat.titleKo,
+                            style: textTheme.bodyMedium,
+                          ),
+                        ),
+                        Text(
+                          prefs.isCategoryEnabled(uid, cat) ? 'ON' : 'OFF',
+                          style: textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: prefs.isCategoryEnabled(uid, cat)
+                                ? AppColors.success
+                                : AppColors.holiday,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Text(
+                  prefs.debugSummary(uid),
+                  style: textTheme.labelSmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }

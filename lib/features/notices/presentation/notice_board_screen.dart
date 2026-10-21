@@ -249,29 +249,18 @@ class _NoticeComposeScreenState extends State<_NoticeComposeScreen> {
             const SizedBox(height: 8),
             AppBorderedField(
               height: 52,
-              child: TextField(
+              child: AppPlainTextField(
                 controller: _titleCtrl,
+                hintText: '공지 제목',
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF191F28),
                 ),
-                decoration: const InputDecoration(
-                  hintText: '공지 제목',
-                  hintStyle: TextStyle(
-                    color: Color(0xFF8B95A1),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  filled: false,
-                  isDense: true,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
+                hintStyle: const TextStyle(
+                  color: Color(0xFF8B95A1),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
@@ -280,32 +269,21 @@ class _NoticeComposeScreenState extends State<_NoticeComposeScreen> {
             const SizedBox(height: 8),
             AppBorderedField(
               height: null,
-              child: TextField(
+              child: AppPlainTextField(
                 controller: _bodyCtrl,
                 maxLines: 8,
                 minLines: 5,
+                hintText: '공지 내용을 입력하세요',
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                   color: Color(0xFF191F28),
                   height: 1.4,
                 ),
-                decoration: const InputDecoration(
-                  hintText: '공지 내용을 입력하세요',
-                  hintStyle: TextStyle(
-                    color: Color(0xFF8B95A1),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  filled: false,
-                  isDense: true,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
+                hintStyle: const TextStyle(
+                  color: Color(0xFF8B95A1),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),

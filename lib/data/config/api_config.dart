@@ -10,13 +10,13 @@ import 'package:flutter/foundation.dart';
 /// 예)
 /// ```bash
 /// flutter run --dart-define=USE_LOCAL_API=true
-/// flutter run --dart-define=API_BASE_URL=https://moneyshift.vercel.app
+/// flutter run --dart-define=API_BASE_URL=https://moneyshift-ten.vercel.app
 /// ```
 abstract final class ApiConfig {
   ApiConfig._();
 
-  /// 배포된 Vercel 서버
-  static const String productionBaseUrl = 'https://moneyshift.vercel.app';
+  /// 배포된 Vercel 서버 (Production)
+  static const String productionBaseUrl = 'https://moneyshift-ten.vercel.app';
 
   /// 로컬 Express (`npm run dev` → api/local.js)
   static const String localBaseUrl = 'http://127.0.0.1:3000';

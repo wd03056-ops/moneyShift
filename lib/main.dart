@@ -17,6 +17,7 @@ import 'core/navigation/app_navigation.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/navigation/app_route_names.dart';
 import 'core/security/secure_log.dart';
+import 'core/storage/secure_session_storage.dart';
 import 'core/theme/app_scroll_behavior.dart';
 import 'core/theme/app_theme.dart';
 import 'core/time/kst_date_time.dart';
@@ -86,6 +87,13 @@ Future<void> main() async {
     try {
       final result = await AuthIntegrationService.instance.signIn(
         persona: MockAuthPersona.owner,
+      );
+      await SecureSessionStorage.instance.saveSession(
+        userId: result.user.uid,
+        authProvider: 'mock',
+        accessToken: result.kakao.accessToken,
+        refreshToken: result.kakao.refreshToken,
+        firebaseUid: result.firebaseUid,
       );
       MockSession.instance.loginAs(result.mockUser);
       SecureLog.d(

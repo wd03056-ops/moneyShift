@@ -63,14 +63,25 @@ class _PushNotificationSwitchTileState
     );
     if (!mounted) return;
     setState(() => _busyCat = null);
-    if (wantEnabled && !ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('시스템 알림 권한이 없어 푸시를 켤 수 없습니다. 설정에서 허용해 주세요.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+
+    if (ok) {
+      debugPrint(
+        '[PushToggle] ${category.prefsKey}=${wantEnabled ? 'ON' : 'OFF'} '
+        'uid=$uid',
       );
+      return;
     }
+
+    // 실패 시 store가 이전 값으로 롤백 → Listenable이 토글 UI 복구
+    final msg = wantEnabled
+        ? '시스템 알림 권한이 없어 ${category.titleKo}을(를) 켤 수 없습니다.'
+        : '${category.titleKo} 설정 저장에 실패했습니다. 다시 시도해 주세요.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override

@@ -69,37 +69,22 @@ class MockStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Play 계정 삭제 — 해당 사용자 관련 데이터 제거(익명화)
+  /// Play 계정 삭제 — 개인정보 익명화, 매장 기록은 '(탈퇴한 회원)'으로 유지
   void deleteAccountData(String userId) {
-    // 소유 매장 삭제
-    final ownedRoomIds =
-        rooms.values.where((r) => r.ownerId == userId).map((r) => r.id).toList();
-    for (final roomId in ownedRoomIds) {
-      members.removeWhere((k, _) => k.startsWith('$roomId|'));
-      invites.removeWhere((_, v) => v.roomId == roomId);
-      schedules.removeWhere((_, v) => v.roomId == roomId);
-      attendanceLogs.removeWhere((_, v) => v.roomId == roomId);
-      shiftSwaps.removeWhere((_, v) => v.roomId == roomId);
-      notices.removeWhere((_, v) => v.roomId == roomId);
-      rooms.remove(roomId);
-    }
+    const deletedName = AppConstants.deletedMemberDisplayName;
 
-    // 타 매장 멤버십·본인 근무·출퇴근·공지 작성분
-    members.removeWhere((_, m) => m.userId == userId);
-    schedules.removeWhere((_, s) => s.workerId == userId);
-    attendanceLogs.removeWhere((_, a) => a.userId == userId);
-    notices.removeWhere((_, n) => n.authorId == userId);
-    shiftSwaps.removeWhere(
-      (_, s) => s.fromWorkerId == userId || s.toWorkerId == userId,
-    );
-
-    // 멤버 수 재계산
-    for (final room in rooms.values.toList()) {
-      final count =
-          members.values.where((m) => m.roomId == room.id).length;
-      rooms[room.id] = room.copyWith(memberCount: count);
+    // 멤버십: 제거하지 않고 표시명·비활성 처리 (근무·급여 FK 유지)
+    var changed = false;
+    for (final entry in members.entries.toList()) {
+      final m = entry.value;
+      if (m.userId != userId) continue;
+      members[entry.key] = m.copyWith(
+        displayName: deletedName,
+        isActive: false,
+      );
+      changed = true;
     }
-    notifyListeners();
+    if (changed) notifyListeners();
   }
 
   void resetAll() {

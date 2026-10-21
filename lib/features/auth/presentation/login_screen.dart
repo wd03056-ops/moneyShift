@@ -8,6 +8,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/deeplink/invite_deep_link_service.dart';
 import '../../../core/navigation/app_navigation.dart';
 import '../../../core/navigation/app_route_names.dart';
+import '../../../core/storage/secure_session_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
@@ -46,6 +47,13 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint(
         '[LoginScreen] Mock OK uid=${result.mockUser.uid} '
         'userDoc=${result.user.docPath}',
+      );
+      await SecureSessionStorage.instance.saveSession(
+        userId: result.user.uid,
+        authProvider: result.usedMockAuth ? 'mock' : result.user.authProvider,
+        accessToken: result.kakao.accessToken,
+        refreshToken: result.kakao.refreshToken,
+        firebaseUid: result.firebaseUid,
       );
       MockSession.instance.loginAs(result.mockUser);
       // AuthHomeGate 가 realName 유무로 메인/온보딩 분기
@@ -88,6 +96,13 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint(
         '[LoginScreen] Kakao+Firebase OK firebaseUid=${result.firebaseUid} '
         'userDoc=${result.user.docPath} kakaoId=${result.kakao.userId}',
+      );
+      await SecureSessionStorage.instance.saveSession(
+        userId: result.user.uid,
+        authProvider: result.user.authProvider,
+        accessToken: result.kakao.accessToken,
+        refreshToken: result.kakao.refreshToken,
+        firebaseUid: result.firebaseUid,
       );
       MockSession.instance.loginAs(result.mockUser);
       debugPrint(

@@ -484,12 +484,20 @@ abstract final class AppNotificationDispatcher {
 
     final prefs = NotificationPreferenceStore.instance;
     final typeKey = type.firestoreValue;
-    final targets = targetUserIds
-        .where((e) => e.isNotEmpty)
+    final requested = targetUserIds.where((e) => e.isNotEmpty).toSet();
+    final targets = requested
         .where(
           (uid) => prefs.shouldDeliver(userId: uid, type: typeKey),
         )
         .toSet();
+    final blocked = requested.difference(targets);
+
+    if (blocked.isNotEmpty) {
+      debugPrint(
+        '[AppNotif] preference block type=$typeKey '
+        'blocked=${blocked.length} allowed=${targets.length}',
+      );
+    }
 
     if (targets.isEmpty) {
       debugPrint(

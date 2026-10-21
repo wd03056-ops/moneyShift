@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
 
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/navigation/app_route_names.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_select_chip.dart';
-import '../../../../core/widgets/outlined_toggle.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
 import '../../../../mock/app_listenables.dart';
 import '../../../../mock/mock_session.dart';
@@ -16,20 +12,15 @@ import '../../../../models/models.dart';
 import '../../../notifications/presentation/notification_inbox_screen.dart';
 import '../../../notifications/presentation/push_notification_switch_tile.dart';
 import '../../../profile/presentation/account_extras_section.dart';
-import '../employee_detail_setting_screen.dart';
 
 /// 사장 전용 매장 설정 — 프로덕션 메뉴 구조
 class OwnerStaffSettingsTab extends StatelessWidget {
   const OwnerStaffSettingsTab({
     super.key,
     required this.room,
-    this.onOpenStaffList,
   });
 
   final RoomModel room;
-
-  /// 하단 탭 '직원목록'으로 이동
-  final VoidCallback? onOpenStaffList;
 
   @override
   Widget build(BuildContext context) {
@@ -38,8 +29,6 @@ class OwnerStaffSettingsTab extends StatelessWidget {
       builder: (context, _) {
         final live =
             MockStore.instance.rooms[room.id] ?? room;
-        final prefs = MockStore.instance.prefsForRoom(live.id);
-        final wageFmt = NumberFormat('#,###');
 
         return ScrollablePageBody(
           top: false,
@@ -61,82 +50,7 @@ class OwnerStaffSettingsTab extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // 1. 급여 · 근무 기본값
-              _SettingsSection(
-                title: '급여 및 근무 기본값',
-                children: [
-                  _SettingsTile(
-                    title: '기본 시급',
-                    subtitle: '${wageFmt.format(prefs.defaultHourlyWage)}원',
-                    leading: Icons.attach_money_rounded,
-                    onTap: () => _editDefaultWage(context, live.id, prefs),
-                  ),
-                  const Divider(height: 1),
-                  _SettingsSwitchTile(
-                    title: '주휴수당 계산',
-                    subtitle: '법정 주휴수당을 급여 추정에 포함',
-                    value: prefs.includeWeeklyHoliday,
-                    onChanged: (v) {
-                      MockStore.instance.updateRoomOwnerPrefs(
-                        live.id,
-                        prefs.copyWith(includeWeeklyHoliday: v),
-                      );
-                    },
-                  ),
-                  const Divider(height: 1),
-                  _SettingsSwitchTile(
-                    title: '야간·연장수당 계산',
-                    subtitle: '야간·연장 가산을 급여 추정에 포함',
-                    value: prefs.includeOvertimeNight,
-                    onChanged: (v) {
-                      MockStore.instance.updateRoomOwnerPrefs(
-                        live.id,
-                        prefs.copyWith(includeOvertimeNight: v),
-                      );
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-
-              // 2. 직원 관리 · 초대
-              _SettingsSection(
-                title: '직원 관리 및 초대',
-                children: [
-                  _SettingsTile(
-                    title: '직원 관리',
-                    subtitle: '직원 목록으로 이동',
-                    leading: Icons.groups_outlined,
-                    onTap: () {
-                      if (onOpenStaffList != null) {
-                        onOpenStaffList!();
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('하단의 직원목록 탭에서 관리할 수 있어요.'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                  const Divider(height: 1),
-                  _InviteCodePanel(
-                    roomId: live.id,
-                    roomName: live.name,
-                  ),
-                  const Divider(height: 1),
-                  _SettingsTile(
-                    title: '직원별 시급·휴게·수당',
-                    subtitle: '근무 배정 시 자동으로 불러올 기본값',
-                    leading: Icons.payments_outlined,
-                    onTap: () => _openStaffContractPicker(context, live),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-
-              // 3. 매장 정보
+              // 1. 매장 정보
               _SettingsSection(
                 title: '매장 정보 관리',
                 children: [
@@ -263,99 +177,6 @@ class OwnerStaffSettingsTab extends StatelessWidget {
     );
   }
 
-  Future<void> _openStaffContractPicker(
-    BuildContext context,
-    RoomModel room,
-  ) async {
-    final staff = MockStore.instance.activeStaffMembers(room.id);
-    if (staff.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('설정할 직원이 없습니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-    final selected = await showModalBottomSheet<RoomMemberModel>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Text(
-                '직원 선택',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-              ),
-            ),
-            for (final m in staff)
-              ListTile(
-                title: Text(m.displayName),
-                subtitle: Text(
-                  '시급 ${NumberFormat('#,###').format(m.contract.hourlyWage)}원',
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => Navigator.pop(ctx, m),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (selected == null || !context.mounted) return;
-    await AppNavigation.pushSingleTop(
-      name: AppRouteNames.employeeContract(room.id, selected.userId),
-      stopAtNames: [AppRouteNames.room(room.id)],
-      builder: (_) => EmployeeDetailSettingScreen(
-        roomId: room.id,
-        member: selected,
-      ),
-    );
-  }
-
-  Future<void> _editDefaultWage(
-    BuildContext context,
-    String roomId,
-    RoomOwnerPrefs prefs,
-  ) async {
-    final result = await showDialog<int>(
-      context: context,
-      builder: (ctx) => _WageInputDialog(
-        initialWage: prefs.defaultHourlyWage,
-      ),
-    );
-    if (result == null || !context.mounted) return;
-    if (result < AppConstants.minimumHourlyWage) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '최저시급(${AppConstants.minimumHourlyWage}원) 이상으로 설정해 주세요.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-    MockStore.instance.updateRoomOwnerPrefs(
-      roomId,
-      prefs.copyWith(defaultHourlyWage: result),
-    );
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('기본 시급을 저장했습니다.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
 }
 
 // -----------------------------------------------------------------------------
@@ -455,225 +276,6 @@ class _SettingsTile extends StatelessWidget {
   }
 }
 
-class _SettingsSwitchTile extends StatelessWidget {
-  const _SettingsSwitchTile({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: textTheme.bodyLarge),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          OutlinedToggle(value: value, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
-}
-
-/// 직책 칩을 누르면 해당 직책 초대 코드로 자동 전환 (직원ABC · 알바X7K1 …)
-class _InviteCodePanel extends StatefulWidget {
-  const _InviteCodePanel({
-    required this.roomId,
-    required this.roomName,
-  });
-
-  final String roomId;
-  final String roomName;
-
-  @override
-  State<_InviteCodePanel> createState() => _InviteCodePanelState();
-}
-
-class _InviteCodePanelState extends State<_InviteCodePanel> {
-  MemberRole _selectedRole = MemberRole.parttime;
-  RoomInviteModel? _invite;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _selectRole(_selectedRole);
-    });
-  }
-
-  void _selectRole(MemberRole role) {
-    try {
-      final invite = MockStore.instance.ensureInviteForRole(
-        roomId: widget.roomId,
-        role: role,
-      );
-      if (!mounted) return;
-      setState(() {
-        _selectedRole = role;
-        _invite = invite;
-        _error = null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _selectedRole = role;
-        _error = '$e';
-      });
-    }
-  }
-
-  Future<void> _copy(BuildContext context, String text, String label) async {
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label을(를) 복사했습니다.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final invite = _invite;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '초대 직책',
-            style: textTheme.labelMedium?.copyWith(
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final role in MemberRole.invitableRoles)
-                AppSelectChip(
-                  label: role.labelKo,
-                  selected: _selectedRole == role,
-                  onTap: () => _selectRole(role),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FA),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '초대 코드',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        invite?.code ?? (_error ?? '불러오는 중…'),
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  _selectedRole.labelKo,
-                  style: textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.accentMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (invite != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _copy(context, invite.code, '초대 코드'),
-                    icon: const Icon(Icons.copy_rounded, size: 16),
-                    label: const Text('코드 복사'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(color: AppColors.border),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      final msg =
-                          '[${widget.roomName}] 초대 코드: ${invite.code}\n${invite.inviteLink}';
-                      _copy(context, msg, '카카오톡 공유 문구');
-                    },
-                    icon: const Icon(Icons.share_outlined, size: 16),
-                    label: const Text('카카오톡 공유'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(color: AppColors.border),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 /// 컨트롤러를 State 가 소유 — 다이얼로그 닫힌 뒤 IME 가 접근해도 dispose 안전
 class _TextInputDialog extends StatefulWidget {
   const _TextInputDialog({
@@ -730,64 +332,6 @@ class _TextInputDialogState extends State<_TextInputDialog> {
         ),
         TextButton(
           onPressed: () => Navigator.pop(context, _controller.text.trim()),
-          child: const Text('저장'),
-        ),
-      ],
-    );
-  }
-}
-
-class _WageInputDialog extends StatefulWidget {
-  const _WageInputDialog({required this.initialWage});
-
-  final int initialWage;
-
-  @override
-  State<_WageInputDialog> createState() => _WageInputDialogState();
-}
-
-class _WageInputDialogState extends State<_WageInputDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialWage.toString());
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      title: const Text('기본 시급'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        decoration: InputDecoration(
-          labelText: '시급 (원)',
-          hintText: '${AppConstants.minimumHourlyWage}',
-          suffixText: '원',
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('취소'),
-        ),
-        TextButton(
-          onPressed: () {
-            final v = int.tryParse(_controller.text.trim());
-            Navigator.pop(context, v);
-          },
           child: const Text('저장'),
         ),
       ],

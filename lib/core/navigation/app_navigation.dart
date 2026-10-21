@@ -44,4 +44,25 @@ abstract final class AppNavigation {
       ),
     );
   }
+
+  /// 로그아웃·탈퇴 등 — 스택 전부 비우고 [builder] 화면만 남김
+  static void pushAndRemoveUntilRoot({
+    required String name,
+    required WidgetBuilder builder,
+    BuildContext? context,
+  }) {
+    final nav = appNavigatorKey.currentState ??
+        (context != null
+            ? Navigator.of(context, rootNavigator: true)
+            : null);
+    if (nav == null) return;
+
+    nav.pushAndRemoveUntil(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(name: name),
+        builder: builder,
+      ),
+      (_) => false,
+    );
+  }
 }

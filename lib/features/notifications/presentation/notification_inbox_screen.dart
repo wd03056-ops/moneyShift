@@ -545,9 +545,7 @@ class _NotificationTile extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              item.targetRoute.isNotEmpty
-                                  ? '${item.typeLabelKo} · ${item.targetRoute}'
-                                  : item.typeLabelKo,
+                              item.typeLabelKo,
                               style: Theme.of(context)
                                   .textTheme
                                   .labelSmall

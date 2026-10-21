@@ -50,6 +50,9 @@ class AppConstants {
   static const int minimumWageYear = 2026;
   static const int minimumHourlyWage = 10320;
 
+  /// 탈퇴 회원 표시명 (매장 근무·급여 기록용 — API와 동일)
+  static const String deletedMemberDisplayName = '(탈퇴한 회원)';
+
   /// FCM / 알림 타입 (NotificationType · Cloud Functions 동기화)
   static const String fcmTypeRegister = 'register';
   static const String fcmTypeAssign = 'assign';

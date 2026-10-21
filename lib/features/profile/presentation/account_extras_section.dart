@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../mock/mock_user.dart';
+import '../../auth/data/account_deletion_service.dart';
 import '../../legal/legal_document_screen.dart';
 import '../../legal/legal_texts.dart';
 import '../../notifications/presentation/notification_test_screen.dart';
@@ -55,13 +56,6 @@ class AccountExtrasSection extends StatelessWidget {
     );
   }
 
-  void _safeSignOut(BuildContext context, {required VoidCallback action}) {
-    Navigator.of(context, rootNavigator: true).popUntil((r) => r.isFirst);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      action();
-    });
-  }
-
   Future<void> _confirmLogout(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -83,7 +77,17 @@ class AccountExtrasSection extends StatelessWidget {
       ),
     );
     if (ok != true || !context.mounted) return;
-    _safeSignOut(context, action: MockSession.instance.logout);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      await AccountDeletionService.instance.logout();
+    } finally {
+      // pushAndRemoveUntil 로 로딩 dialog 도 함께 제거됨
+    }
   }
 
   Future<void> _confirmDeleteAccount(BuildContext context) async {
@@ -94,7 +98,9 @@ class AccountExtrasSection extends StatelessWidget {
         surfaceTintColor: Colors.transparent,
         title: const Text('계정 삭제'),
         content: const Text(
-          '계정을 삭제하면 프로필·소속 매장·근무·출퇴근 기록이 삭제되며 '
+          '계정을 삭제하면 소셜 로그인 연동이 해제되고, '
+          '프로필·푸시 토큰 등 개인정보가 파기됩니다.\n\n'
+          '매장의 근무·급여 기록은 \'(탈퇴한 회원)\'으로 남으며 '
           '복구할 수 없습니다.\n\n계속하시겠습니까?',
         ),
         actions: [
@@ -113,7 +119,38 @@ class AccountExtrasSection extends StatelessWidget {
       ),
     );
     if (ok != true || !context.mounted) return;
-    _safeSignOut(context, action: MockSession.instance.deleteAccount);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final result =
+          await AccountDeletionService.instance.deleteCurrentAccount();
+      if (!result.ok && context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: result.ok ? null : AppColors.holiday,
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('계정 삭제 실패: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.holiday,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -135,7 +172,7 @@ class AccountExtrasSection extends StatelessWidget {
               color: AppColors.primary,
             ),
             title: Text(
-              '실명 · 프로필 수정',
+              '프로필 수정',
               style: textTheme.bodyLarge?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,

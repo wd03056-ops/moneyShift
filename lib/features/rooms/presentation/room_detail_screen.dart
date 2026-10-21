@@ -142,7 +142,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                     membership: entry.membership,
                     index: safeIndex,
                     scheduleCalendarView: _scheduleCalendarView,
-                    onSelectTab: (i) => setState(() => _tabIndex = i),
                   )
                 : _StaffShell(
                     room: entry.room,
@@ -207,14 +206,12 @@ class _OwnerShell extends StatelessWidget {
     required this.membership,
     required this.index,
     required this.scheduleCalendarView,
-    required this.onSelectTab,
   });
 
   final RoomModel room;
   final RoomMemberModel membership;
   final int index;
   final bool scheduleCalendarView;
-  final ValueChanged<int> onSelectTab;
 
   @override
   Widget build(BuildContext context) {
@@ -226,10 +223,7 @@ class _OwnerShell extends StatelessWidget {
           room: room,
           calendarView: scheduleCalendarView,
         ),
-        OwnerStaffSettingsTab(
-          room: room,
-          onOpenStaffList: () => onSelectTab(0),
-        ),
+        OwnerStaffSettingsTab(room: room),
       ],
     );
   }

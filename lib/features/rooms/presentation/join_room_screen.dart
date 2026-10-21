@@ -138,12 +138,22 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
                             child: TextField(
                               controller: _codeController,
                               textCapitalization: TextCapitalization.characters,
+                              autocorrect: false,
+                              enableSuggestions: false,
+                              spellCheckConfiguration:
+                                  const SpellCheckConfiguration.disabled(),
+                              style: const TextStyle(
+                                decoration: TextDecoration.none,
+                              ),
                               decoration: const InputDecoration(
                                 labelText: '초대 코드',
                                 filled: false,
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
                                 focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                errorBorder: InputBorder.none,
+                                focusedErrorBorder: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(
                                   horizontal: 16,
                                   vertical: 14,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_decorations.dart';
 
@@ -75,5 +76,80 @@ class AppBorderedField extends StatelessWidget {
     );
     if (height == null) return boxed;
     return SizedBox(height: height, child: boxed);
+  }
+}
+
+/// [AppBorderedField] 안쪽용 TextField — 입력 밑줄·맞춤법 밑줄 없음
+class AppPlainTextField extends StatelessWidget {
+  const AppPlainTextField({
+    super.key,
+    this.controller,
+    this.focusNode,
+    this.hintText,
+    this.style,
+    this.hintStyle,
+    this.enabled = true,
+    this.maxLines = 1,
+    this.minLines,
+    this.keyboardType,
+    this.textInputAction,
+    this.inputFormatters,
+    this.onChanged,
+    this.onSubmitted,
+    this.textAlignVertical,
+  });
+
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
+  final String? hintText;
+  final TextStyle? style;
+  final TextStyle? hintStyle;
+  final bool enabled;
+  final int? maxLines;
+  final int? minLines;
+  final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
+  final List<TextInputFormatter>? inputFormatters;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final TextAlignVertical? textAlignVertical;
+
+  static const InputDecoration plainDecoration = InputDecoration(
+    filled: false,
+    isDense: true,
+    border: InputBorder.none,
+    enabledBorder: InputBorder.none,
+    focusedBorder: InputBorder.none,
+    disabledBorder: InputBorder.none,
+    errorBorder: InputBorder.none,
+    focusedErrorBorder: InputBorder.none,
+    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      enabled: enabled,
+      maxLines: maxLines,
+      minLines: minLines,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      inputFormatters: inputFormatters,
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
+      textAlignVertical: textAlignVertical,
+      autocorrect: false,
+      enableSuggestions: false,
+      spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+      style: (style ?? Theme.of(context).textTheme.bodyLarge)?.copyWith(
+        decoration: TextDecoration.none,
+      ),
+      decoration: plainDecoration.copyWith(
+        hintText: hintText,
+        hintStyle: hintStyle,
+      ),
+    );
   }
 }

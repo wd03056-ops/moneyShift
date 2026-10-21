@@ -1200,6 +1200,10 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                     controller: _wageController,
                     enabled: !_submitting,
                     keyboardType: TextInputType.number,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     inputFormatters: const [
                       _ThousandsSeparatorInputFormatter(),
                     ],
@@ -1207,6 +1211,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: Color(0xFF191F28),
+                      decoration: TextDecoration.none,
                     ),
                     decoration: const InputDecoration(
                       hintText: '직원 기본 시급',
@@ -1220,6 +1225,9 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 14,
