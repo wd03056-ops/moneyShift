@@ -1,3 +1,9 @@
+# Node / Vercel API
+node_modules/
+.vercel/
+npm-debug.log*
+yarn-error.log*
+
 # Miscellaneous
 *.class
 *.log
