@@ -3,15 +3,12 @@
  *
  * Vercel은 이 파일을 서버리스 함수로 배포합니다.
  * 라우트는 vercel.json 에서 /api/* → 이 핸들러로 매핑됩니다.
+ *
+ * 주의: firebase-admin 은 탈퇴 등 필요 시에만 lazy-load 한다.
+ * 헬스체크 경로에서 무거운 모듈을 올리면 FUNCTION_INVOCATION_FAILED 가 날 수 있다.
  */
 const express = require('express');
 const cors = require('cors');
-const {
-  DELETED_DISPLAY_NAME,
-  verifyKakaoAccessToken,
-  deleteAccountInFirestore,
-  isConfigured: isFirebaseConfigured,
-} = require('./lib/accountDeletion');
 const {
   createRateLimiter,
   createStrictRateLimiter,
@@ -23,7 +20,12 @@ app.use(
   cors({
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Id', 'X-Auth-Provider'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-User-Id',
+      'X-Auth-Provider',
+    ],
   }),
 );
 app.use(express.json({ limit: '1mb' }));
@@ -34,10 +36,11 @@ app.use(
     windowMs: 60_000,
     max: 60,
     skip: (req) => {
-      const p = req.path || '';
+      const p = String(req.path || req.url || '').split('?')[0];
       return (
         p === '/api/health' ||
         p === '/health' ||
+        p.endsWith('/health') ||
         req.method === 'OPTIONS'
       );
     },
@@ -46,32 +49,59 @@ app.use(
 
 const strictAccountLimit = createStrictRateLimiter();
 
-/** 헬스체크 — Flutter / 배포 확인용 */
+/** env 만 확인 — firebase-admin 로드/초기화 없음 */
+function firebaseEnvPresent() {
+  try {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (raw && String(raw).trim()) return true;
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** 헬스체크 — Flutter / 배포 확인용 (절대 throw 하지 않음) */
 app.get(['/api/health', '/health'], (_req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: 'money-shift-api',
-    ts: new Date().toISOString(),
-    firebaseAdmin: isFirebaseConfigured(),
-  });
+  try {
+    return res.status(200).json({
+      ok: true,
+      service: 'money-shift-api',
+      ts: new Date().toISOString(),
+      firebaseAdminEnv: firebaseEnvPresent(),
+    });
+  } catch (e) {
+    console.error('[health]', e);
+    return res.status(200).json({
+      ok: true,
+      service: 'money-shift-api',
+      degraded: true,
+      message: String(e && e.message ? e.message : e),
+    });
+  }
 });
 
 /** 루트 — Vercel 404 방지 + 배포 확인 */
 app.get(['/api', '/', '/api/'], (_req, res) => {
-  res.status(200).json({
-    ok: true,
-    message: 'Money Shift API',
-    endpoints: {
-      health: 'GET /api/health',
-      authPing: 'GET /api/auth/ping',
-      schedulesPing: 'GET /api/schedules/ping',
-      accountDelete: 'DELETE /api/account',
-    },
-    rateLimit: {
-      global: '60 req / 60s per IP (and userId if present)',
-      accountDelete: '5 req / 60s',
-    },
-  });
+  try {
+    return res.status(200).json({
+      ok: true,
+      message: 'Money Shift API',
+      endpoints: {
+        health: 'GET /api/health',
+        authPing: 'GET /api/auth/ping',
+        schedulesPing: 'GET /api/schedules/ping',
+        accountDelete: 'DELETE /api/account',
+      },
+      rateLimit: {
+        global: '60 req / 60s per IP (and userId if present)',
+        accountDelete: '5 req / 60s',
+      },
+    });
+  } catch (e) {
+    console.error('[root]', e);
+    return res.status(200).json({ ok: true, message: 'Money Shift API' });
+  }
 });
 
 /** 로그인 관련 임시 ping */
@@ -92,6 +122,19 @@ app.get(['/api/schedules/ping', '/schedules/ping'], (_req, res) => {
   });
 });
 
+function _bearerToken(req) {
+  const h = req.headers.authorization;
+  if (!h || typeof h !== 'string') return null;
+  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+  return m ? m[1].trim() : null;
+}
+
+function _loadAccountDeletion() {
+  // lazy — firebase-admin 포함 모듈을 콜드 패스에서 제외
+  // eslint-disable-next-line global-require
+  return require('./lib/accountDeletion');
+}
+
 /**
  * 회원 탈퇴
  *
@@ -99,14 +142,19 @@ app.get(['/api/schedules/ping', '/schedules/ping'], (_req, res) => {
  * {
  *   userId: string,
  *   authProvider?: 'kakao' | 'google' | 'mock' | ...,
- *   kakaoAccessToken?: string,  // kakao 일 때 권장 (토큰 소유자 검증)
- *   confirm?: true              // 실수 방지
+ *   kakaoAccessToken?: string,
+ *   confirm?: true
  * }
- *
- * Header (선택): Authorization: Bearer <kakao_or_firebase_token>
  */
 async function handleAccountDelete(req, res) {
   try {
+    const {
+      DELETED_DISPLAY_NAME,
+      verifyKakaoAccessToken,
+      deleteAccountInFirestore,
+      isConfigured: isFirebaseConfigured,
+    } = _loadAccountDeletion();
+
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const userId = String(
       body.userId || req.headers['x-user-id'] || '',
@@ -138,7 +186,6 @@ async function handleAccountDelete(req, res) {
       (typeof body.kakaoAccessToken === 'string' && body.kakaoAccessToken) ||
       (authProvider === 'kakao' ? bearer : null);
 
-    // 카카오 토큰이 있으면 소유자 검증
     if (kakaoToken) {
       const kakaoId = await verifyKakaoAccessToken(kakaoToken);
       if (!kakaoId) {
@@ -155,7 +202,10 @@ async function handleAccountDelete(req, res) {
           message: '토큰 소유자와 userId가 일치하지 않습니다.',
         });
       }
-    } else if (authProvider === 'kakao' && process.env.REQUIRE_KAKAO_TOKEN === 'true') {
+    } else if (
+      authProvider === 'kakao' &&
+      process.env.REQUIRE_KAKAO_TOKEN === 'true'
+    ) {
       return res.status(401).json({
         ok: false,
         error: 'kakao_token_required',
@@ -163,12 +213,20 @@ async function handleAccountDelete(req, res) {
       });
     }
 
-    if (!isFirebaseConfigured()) {
+    let configured = false;
+    try {
+      configured = Boolean(isFirebaseConfigured());
+    } catch (e) {
+      console.error('[account/delete] isConfigured', e);
+      configured = false;
+    }
+
+    if (!configured) {
       return res.status(503).json({
         ok: false,
         error: 'firebase_admin_not_configured',
         message:
-          'FIREBASE_SERVICE_ACCOUNT_JSON 이 설정되지 않았습니다. '
+          'FIREBASE_SERVICE_ACCOUNT_JSON 이 설정되지 않았거나 초기화에 실패했습니다. '
           + 'Vercel 환경변수를 확인한 뒤 재배포하세요.',
       });
     }
@@ -182,19 +240,19 @@ async function handleAccountDelete(req, res) {
       summary: result.summary,
     });
   } catch (e) {
-    const code = e.code || 'account_delete_failed';
+    const code = e && e.code ? e.code : 'account_delete_failed';
     const status =
-      code === 'firebase_admin_not_configured' ||
-      code === 'user_id_required'
-        ? code === 'user_id_required'
+      code === 'firebase_admin_not_configured'
+        ? 503
+        : code === 'user_id_required'
           ? 400
-          : 503
-        : 500;
+          : 500;
     console.error('[account/delete]', e);
+    if (res.headersSent) return undefined;
     return res.status(status).json({
       ok: false,
       error: code,
-      message: e.message || '계정 삭제에 실패했습니다.',
+      message: (e && e.message) || '계정 삭제에 실패했습니다.',
     });
   }
 }
@@ -202,21 +260,17 @@ async function handleAccountDelete(req, res) {
 app.delete(
   ['/api/account', '/account'],
   strictAccountLimit,
-  handleAccountDelete,
+  (req, res, next) => {
+    Promise.resolve(handleAccountDelete(req, res)).catch(next);
+  },
 );
-/** 일부 클라이언트/프록시가 DELETE body 를 막으면 POST 로도 허용 */
 app.post(
   ['/api/account/delete', '/account/delete'],
   strictAccountLimit,
-  handleAccountDelete,
+  (req, res, next) => {
+    Promise.resolve(handleAccountDelete(req, res)).catch(next);
+  },
 );
-
-function _bearerToken(req) {
-  const h = req.headers.authorization;
-  if (!h || typeof h !== 'string') return null;
-  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
-  return m ? m[1].trim() : null;
-}
 
 /** 매칭되지 않은 API 경로 */
 app.use((req, res) => {
@@ -227,4 +281,41 @@ app.use((req, res) => {
   });
 });
 
-module.exports = app;
+/** Express 4 error middleware — 미처리 예외 → JSON 500 (프로세스 크래시 방지) */
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  console.error('[api] unhandled', err);
+  if (res.headersSent) return;
+  res.status(500).json({
+    ok: false,
+    error: 'internal_error',
+    message: (err && err.message) || 'Internal Server Error',
+  });
+});
+
+/**
+ * Vercel @vercel/node 핸들러 래퍼
+ * Express app 직접 export 도 동작하지만, 동기 예외를 한 번 더 감싼다.
+ */
+function handler(req, res) {
+  try {
+    return app(req, res);
+  } catch (e) {
+    console.error('[api] sync fatal', e);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(
+        JSON.stringify({
+          ok: false,
+          error: 'fatal',
+          message: (e && e.message) || 'Internal Server Error',
+        }),
+      );
+    }
+    return undefined;
+  }
+}
+
+module.exports = handler;
+module.exports.app = app;

@@ -58,49 +58,55 @@ function createRateLimiter(opts = {}) {
   const skip = opts.skip;
 
   return function rateLimitMiddleware(req, res, next) {
-    if (typeof skip === 'function' && skip(req)) {
+    try {
+      if (typeof skip === 'function' && skip(req)) {
+        return next();
+      }
+
+      const now = Date.now();
+      prune(now);
+
+      const ip = clientIp(req);
+      const uid = userKey(req);
+      // IP 버킷 + (있으면) 유저 버킷 둘 다 검사 — 둘 중 하나라도 초과 시 차단
+      const keys = [`ip:${ip}`];
+      if (uid) keys.push(`uid:${uid}`);
+
+      for (const key of keys) {
+        let entry = buckets.get(key);
+        if (!entry || entry.resetAt <= now) {
+          entry = { count: 0, resetAt: now + windowMs };
+          buckets.set(key, entry);
+        }
+        entry.count += 1;
+        if (entry.count > max) {
+          const retryAfterSec = Math.max(
+            1,
+            Math.ceil((entry.resetAt - now) / 1000),
+          );
+          res.setHeader('Retry-After', String(retryAfterSec));
+          res.setHeader('X-RateLimit-Limit', String(max));
+          res.setHeader('X-RateLimit-Remaining', '0');
+          return res.status(429).json({
+            ok: false,
+            error: 'rate_limited',
+            message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+            retryAfterSec,
+          });
+        }
+        res.setHeader('X-RateLimit-Limit', String(max));
+        res.setHeader(
+          'X-RateLimit-Remaining',
+          String(Math.max(0, max - entry.count)),
+        );
+      }
+
+      return next();
+    } catch (e) {
+      console.error('[rateLimit]', e);
+      // 제한기 오류 시 API 전체를 막지 않음
       return next();
     }
-
-    const now = Date.now();
-    prune(now);
-
-    const ip = clientIp(req);
-    const uid = userKey(req);
-    // IP 버킷 + (있으면) 유저 버킷 둘 다 검사 — 둘 중 하나라도 초과 시 차단
-    const keys = [`ip:${ip}`];
-    if (uid) keys.push(`uid:${uid}`);
-
-    for (const key of keys) {
-      let entry = buckets.get(key);
-      if (!entry || entry.resetAt <= now) {
-        entry = { count: 0, resetAt: now + windowMs };
-        buckets.set(key, entry);
-      }
-      entry.count += 1;
-      if (entry.count > max) {
-        const retryAfterSec = Math.max(
-          1,
-          Math.ceil((entry.resetAt - now) / 1000),
-        );
-        res.setHeader('Retry-After', String(retryAfterSec));
-        res.setHeader('X-RateLimit-Limit', String(max));
-        res.setHeader('X-RateLimit-Remaining', '0');
-        return res.status(429).json({
-          ok: false,
-          error: 'rate_limited',
-          message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.',
-          retryAfterSec,
-        });
-      }
-      res.setHeader('X-RateLimit-Limit', String(max));
-      res.setHeader(
-        'X-RateLimit-Remaining',
-        String(Math.max(0, max - entry.count)),
-      );
-    }
-
-    return next();
   };
 }
 
