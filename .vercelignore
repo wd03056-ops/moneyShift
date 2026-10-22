@@ -1,4 +1,5 @@
 # Flutter / native — API + 약관 정적 페이지 배포
+# 주의: `lib/` 는 api/lib 까지 무시하므로 루트만 `/lib/` 로 지정
 android/
 ios/
 linux/
@@ -10,14 +11,14 @@ build/
 .idea/
 .vscode/
 .cursor/
-assets/
-docs/
+/assets/
+/docs/
 firebase/
 functions/
 packages/
 scripts/
-test/
-lib/
+/test/
+/lib/
 *.iml
 *.png
 pubspec.yaml
