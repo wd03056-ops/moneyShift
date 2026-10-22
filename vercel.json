@@ -4,12 +4,28 @@
     {
       "src": "api/index.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "privacy/index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "terms/index.html",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
+      "src": "^/privacy/?$",
+      "dest": "/privacy/index.html"
+    },
+    {
+      "src": "^/terms/?$",
+      "dest": "/terms/index.html"
+    },
+    {
       "src": "/(.*)",
-      "dest": "api/index.js"
+      "dest": "/api/index.js"
     }
   ]
 }
