@@ -11,7 +11,7 @@ const express = require('express');
 const cors = require('cors');
 const {
   createRateLimiter,
-  createStrictRateLimiter,
+  consumeOrReject,
 } = require('./lib/rateLimit');
 
 const app = express();
@@ -46,8 +46,6 @@ app.use(
     },
   }),
 );
-
-const strictAccountLimit = createStrictRateLimiter();
 
 /** env 만 확인 — firebase-admin 로드/초기화 없음 */
 function firebaseEnvPresent() {
@@ -181,6 +179,11 @@ async function handleAccountDelete(req, res) {
       });
     }
 
+    // 검증 통과 후에만 카운트 — 잘못된 요청으로 429 소진 방지
+    if (consumeOrReject(req, res, { windowMs: 60_000, max: 5 })) {
+      return undefined;
+    }
+
     const bearer = _bearerToken(req);
     const kakaoToken =
       (typeof body.kakaoAccessToken === 'string' && body.kakaoAccessToken) ||
@@ -257,20 +260,12 @@ async function handleAccountDelete(req, res) {
   }
 }
 
-app.delete(
-  ['/api/account', '/account'],
-  strictAccountLimit,
-  (req, res, next) => {
-    Promise.resolve(handleAccountDelete(req, res)).catch(next);
-  },
-);
-app.post(
-  ['/api/account/delete', '/account/delete'],
-  strictAccountLimit,
-  (req, res, next) => {
-    Promise.resolve(handleAccountDelete(req, res)).catch(next);
-  },
-);
+app.delete(['/api/account', '/account'], (req, res, next) => {
+  Promise.resolve(handleAccountDelete(req, res)).catch(next);
+});
+app.post(['/api/account/delete', '/account/delete'], (req, res, next) => {
+  Promise.resolve(handleAccountDelete(req, res)).catch(next);
+});
 
 /** 매칭되지 않은 API 경로 */
 app.use((req, res) => {
@@ -281,11 +276,19 @@ app.use((req, res) => {
   });
 });
 
-/** Express 4 error middleware — 미처리 예외 → JSON 500 (프로세스 크래시 방지) */
+/** Express 4 error middleware — JSON 파싱·미처리 예외 (프로세스 크래시 방지) */
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
   console.error('[api] unhandled', err);
   if (res.headersSent) return;
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    res.status(400).json({
+      ok: false,
+      error: 'invalid_json',
+      message: 'JSON 형식이 올바르지 않습니다.',
+    });
+    return;
+  }
   res.status(500).json({
     ok: false,
     error: 'internal_error',

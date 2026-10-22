@@ -115,8 +115,53 @@ function createStrictRateLimiter() {
   return createRateLimiter({ windowMs: 60_000, max: 5 });
 }
 
+/**
+ * 미들웨어 없이 호출 — 검증 통과 후에만 카운트할 때 사용.
+ * @returns {boolean} true 이면 이미 429 응답을 보냄
+ */
+function consumeOrReject(req, res, opts = {}) {
+  const windowMs = opts.windowMs ?? 60_000;
+  const max = opts.max ?? 5;
+  try {
+    const now = Date.now();
+    prune(now);
+    const ip = clientIp(req);
+    const uid = userKey(req);
+    const keys = [`strict:ip:${ip}`];
+    if (uid) keys.push(`strict:uid:${uid}`);
+
+    for (const key of keys) {
+      let entry = buckets.get(key);
+      if (!entry || entry.resetAt <= now) {
+        entry = { count: 0, resetAt: now + windowMs };
+        buckets.set(key, entry);
+      }
+      entry.count += 1;
+      if (entry.count > max) {
+        const retryAfterSec = Math.max(
+          1,
+          Math.ceil((entry.resetAt - now) / 1000),
+        );
+        res.setHeader('Retry-After', String(retryAfterSec));
+        res.status(429).json({
+          ok: false,
+          error: 'rate_limited',
+          message: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.',
+          retryAfterSec,
+        });
+        return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    console.error('[rateLimit.consumeOrReject]', e);
+    return false;
+  }
+}
+
 module.exports = {
   createRateLimiter,
   createStrictRateLimiter,
+  consumeOrReject,
   clientIp,
 };

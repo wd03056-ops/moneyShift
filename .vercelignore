@@ -1,5 +1,5 @@
 # Flutter / native — API + 약관 정적 페이지 배포
-# 주의: `lib/` 는 api/lib 까지 무시하므로 루트만 `/lib/` 로 지정
+# 디렉터리 패턴은 루트만 무시 (`lib/` 는 api/lib 까지 지워 FUNCTION_INVOCATION_FAILED 유발)
 android/
 ios/
 linux/
@@ -13,10 +13,10 @@ build/
 .cursor/
 /assets/
 /docs/
-firebase/
-functions/
-packages/
-scripts/
+/firebase/
+/functions/
+/packages/
+/scripts/
 /test/
 /lib/
 *.iml

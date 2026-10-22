@@ -48,29 +48,45 @@ class ApiService {
   }
 
   /// `GET /api/health` — 서버 생존 확인
+  ///
+  /// 5xx 도 예외로 던지지 않고 [ApiHealthResult]로 반환한다.
   Future<ApiHealthResult> checkServerHealth() async {
     try {
-      final res = await _dio.get<Map<String, dynamic>>('/api/health');
-      final data = res.data ?? const <String, dynamic>{};
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/health',
+        options: Options(
+          validateStatus: (_) => true,
+          receiveTimeout: const Duration(seconds: 12),
+        ),
+      );
+      final raw = res.data;
+      final data = raw is Map<String, dynamic>
+          ? raw
+          : const <String, dynamic>{};
       final ok = res.statusCode == 200 && data['ok'] == true;
+      if (!ok) {
+        debugPrint(
+          '[ApiService] health FAIL status=${res.statusCode} body=$data',
+        );
+      }
       return ApiHealthResult(
         ok: ok,
         statusCode: res.statusCode,
         body: data,
         message: ok
             ? '서버 정상 (${data['service'] ?? 'api'})'
-            : '응답 이상 status=${res.statusCode}',
+            : '서버 응답 이상 status=${res.statusCode}',
       );
     } on DioException catch (e) {
-      debugPrint('[ApiService] health FAIL: ${e.message}');
+      debugPrint('[ApiService] health FAIL: ${e.type.name} ${e.message}');
       return ApiHealthResult(
         ok: false,
         statusCode: e.response?.statusCode,
-        message: e.message ?? '연결 실패',
+        message: '연결 실패 (${e.type.name})',
       );
     } catch (e) {
       debugPrint('[ApiService] health FAIL: $e');
-      return ApiHealthResult(ok: false, message: '$e');
+      return ApiHealthResult(ok: false, message: '연결 실패');
     }
   }
 

@@ -44,22 +44,31 @@ async function verifyKakaoAccessToken(accessToken) {
 
 /** 목록 폭탄 방지 — 페이지 단위로 전량 수집 (탈퇴 익명화용) */
 async function queryByField(db, collection, field, value, pageSize = 100) {
-  const docs = [];
-  let last = null;
-  // 안전 상한: 최대 50페이지 (5000 docs)
-  for (let page = 0; page < 50; page += 1) {
-    let q = db
-      .collection(collection)
-      .where(field, '==', value)
-      .limit(pageSize);
-    if (last) q = q.startAfter(last);
-    const snap = await q.get();
-    if (snap.empty) break;
-    docs.push(...snap.docs);
-    last = snap.docs[snap.docs.length - 1];
-    if (snap.size < pageSize) break;
+  try {
+    const docs = [];
+    let last = null;
+    // 안전 상한: 최대 50페이지 (5000 docs)
+    for (let page = 0; page < 50; page += 1) {
+      let q = db
+        .collection(collection)
+        .where(field, '==', value)
+        .limit(pageSize);
+      if (last) q = q.startAfter(last);
+      const snap = await q.get();
+      if (snap.empty) break;
+      docs.push(...snap.docs);
+      last = snap.docs[snap.docs.length - 1];
+      if (snap.size < pageSize) break;
+    }
+    return docs;
+  } catch (e) {
+    // 인덱스 미구성·권한 등으로 실패해도 탈퇴 전체는 계속 진행
+    console.error(
+      `[accountDeletion] queryByField ${collection}.${field} FAIL:`,
+      e && e.message ? e.message : e,
+    );
+    return [];
   }
-  return docs;
 }
 
 async function commitInChunks(db, mutators) {

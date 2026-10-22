@@ -38,8 +38,17 @@ function _parseServiceAccount(raw) {
 
 function getAdmin() {
   if (_app) {
-    // eslint-disable-next-line global-require
-    return { admin: require('firebase-admin'), app: _app, db: _db, error: null };
+    try {
+      // eslint-disable-next-line global-require
+      return { admin: require('firebase-admin'), app: _app, db: _db, error: null };
+    } catch (e) {
+      return {
+        admin: null,
+        app: null,
+        db: null,
+        error: e.message || 'firebase_admin_require_failed',
+      };
+    }
   }
   if (_initError) {
     return { admin: null, app: null, db: null, error: _initError };
@@ -105,8 +114,13 @@ function getAdmin() {
 }
 
 function isConfigured() {
-  const { db, error } = getAdmin();
-  return Boolean(db) && !error;
+  try {
+    const { db, error } = getAdmin();
+    return Boolean(db) && !error;
+  } catch (e) {
+    console.error('[firebaseAdmin] isConfigured FAIL:', e);
+    return false;
+  }
 }
 
 module.exports = { getAdmin, isConfigured };
