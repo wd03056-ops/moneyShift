@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../models/monthly_labor_cost.dart';
 import '../config/api_config.dart';
 
 /// Vercel Express API 클라이언트 (dio)
@@ -200,6 +201,47 @@ class ApiService {
     } catch (e) {
       debugPrint('[ApiService] deleteAccount FAIL: $e');
       return AccountDeletionApiResult(ok: false, message: '$e');
+    }
+  }
+
+  /// `GET /api/labor-cost/monthly`
+  Future<MonthlyLaborCost?> fetchMonthlyLaborCost({
+    required String roomId,
+    required int year,
+    required int month,
+    bool includeWeeklyHoliday = false,
+    bool includeEmployerSocialInsurance = false,
+  }) async {
+    try {
+      final res = await _dio.get<Map<String, dynamic>>(
+        '/api/labor-cost/monthly',
+        queryParameters: {
+          'roomId': roomId,
+          'year': year,
+          'month': month,
+          'includeWeeklyHoliday': includeWeeklyHoliday,
+          'includeEmployerSocialInsurance': includeEmployerSocialInsurance,
+        },
+        options: Options(validateStatus: (_) => true),
+      );
+      final data = res.data;
+      if (res.statusCode != 200 || data is! Map<String, dynamic>) {
+        debugPrint(
+          '[ApiService] laborCost FAIL status=${res.statusCode} body=$data',
+        );
+        return null;
+      }
+      if (data['ok'] != true) {
+        debugPrint('[ApiService] laborCost FAIL: ${data['error']}');
+        return null;
+      }
+      return MonthlyLaborCost.fromJson(data);
+    } on DioException catch (e) {
+      debugPrint('[ApiService] laborCost FAIL: ${e.message}');
+      return null;
+    } catch (e) {
+      debugPrint('[ApiService] laborCost FAIL: $e');
+      return null;
     }
   }
 

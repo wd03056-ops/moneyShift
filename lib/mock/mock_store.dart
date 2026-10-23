@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/constants/app_constants.dart';
+import '../core/constants/firestore_paths.dart';
 import '../core/exceptions/room_exceptions.dart';
 import '../core/exceptions/schedule_exceptions.dart';
 import '../core/time/kst_date_time.dart';
@@ -34,6 +35,10 @@ class MockStore extends ChangeNotifier {
   final Map<String, RoomModel> rooms = {};
   final Map<String, RoomMemberModel> members = {};
   final Map<String, RoomInviteModel> invites = {};
+
+  /// 커스텀 직책 — key: roleId
+  final Map<String, RoomCustomRoleModel> customRoles = {};
+
   final Map<String, ScheduleModel> schedules = {};
   final Map<String, AttendanceLogModel> attendanceLogs = {};
   final Map<String, ShiftSwapRequest> shiftSwaps = {};
@@ -91,6 +96,7 @@ class MockStore extends ChangeNotifier {
     rooms.clear();
     members.clear();
     invites.clear();
+    customRoles.clear();
     schedules.clear();
     attendanceLogs.clear();
     shiftSwaps.clear();
@@ -284,7 +290,7 @@ class MockStore extends ChangeNotifier {
       location: const GeoLocation(
         latitude: 37.5665,
         longitude: 126.9780,
-        address: '서울특별시 중구 세종대로 110',
+        address: '서울특별시 중구 세종대로 110 (서울특별시청)',
       ),
       memberCount: 1 + MockUser.demoStaffRoster.length,
       createdAt: now,
@@ -348,6 +354,8 @@ class MockStore extends ChangeNotifier {
     required double latitude,
     required double longitude,
     String? address,
+    double geofenceRadiusMeters =
+        AppConstants.attendanceGeofenceRadiusMeters,
   }) {
     final user = _session.currentUser;
     if (user == null) throw const NotAuthenticatedException();
@@ -372,6 +380,7 @@ class MockStore extends ChangeNotifier {
         longitude: longitude,
         address: address,
       ),
+      geofenceRadiusMeters: geofenceRadiusMeters,
       memberCount: 1,
       createdAt: now,
       updatedAt: now,
@@ -476,21 +485,40 @@ class MockStore extends ChangeNotifier {
       throw const RoomNotFoundException();
     }
 
+    // 기본 직책 초대는 결정적 ID — 연타·중복 ensure 시 덮어쓰기/단건 유지
+    final docId = _defaultInviteId(roomId, role);
+    final existing = invites[docId];
+    if (existing != null &&
+        existing.canBeUsed &&
+        _isNumericInviteCode(existing.code)) {
+      return existing;
+    }
+
     return _putInvite(
       roomId: roomId,
       role: role,
       createdBy: user.uid,
       validFor: validFor,
+      inviteId: docId,
     );
   }
 
-  /// 해당 직책의 활성 초대가 있으면 반환, 없으면 생성.
-  /// 예전 한글 접두사 코드는 비활성 후 숫자 코드로 재발급.
+  /// 해당 기본 직책의 활성 초대가 있으면 반환, 없으면 생성.
+  /// 문서 ID = `{roomId}_default_{role}` 로 방·직책당 단건 유지.
   RoomInviteModel ensureInviteForRole({
     required String roomId,
     required MemberRole role,
-    Duration validFor = const Duration(days: 7),
+    Duration validFor = const Duration(days: 365),
   }) {
+    if (!MemberRole.invitableRoles.contains(role)) {
+      throw ArgumentError('초대 불가 직책입니다.');
+    }
+    final docId = _defaultInviteId(roomId, role);
+    final byId = invites[docId];
+    if (byId != null && byId.canBeUsed && _isNumericInviteCode(byId.code)) {
+      return byId;
+    }
+
     final existing = activeInviteForRole(roomId, role);
     if (existing != null) {
       if (_isNumericInviteCode(existing.code)) return existing;
@@ -503,6 +531,25 @@ class MockStore extends ChangeNotifier {
     );
   }
 
+  static String _defaultInviteId(String roomId, MemberRole role) =>
+      FirestorePaths.defaultRoleInviteDocId(roomId, role.firestoreValue);
+
+  /// 매니저·직원·알바 기본 초대 코드를 한 번에 확보 (카드 UI용)
+  Map<MemberRole, RoomInviteModel> ensureDefaultRoleInvites({
+    required String roomId,
+    Duration validFor = const Duration(days: 365),
+  }) {
+    final out = <MemberRole, RoomInviteModel>{};
+    for (final role in MemberRole.invitableRoles) {
+      out[role] = ensureInviteForRole(
+        roomId: roomId,
+        role: role,
+        validFor: validFor,
+      );
+    }
+    return out;
+  }
+
   static bool _isNumericInviteCode(String code) {
     if (code.isEmpty) return false;
     for (final c in code.codeUnits) {
@@ -511,10 +558,12 @@ class MockStore extends ChangeNotifier {
     return true;
   }
 
+  /// 기본 직책 전용 활성 초대 (커스텀 직책 초대 제외)
   RoomInviteModel? activeInviteForRole(String roomId, MemberRole role) {
     for (final invite in invites.values) {
       if (invite.roomId == roomId &&
           invite.role == role &&
+          invite.customRoleId == null &&
           invite.canBeUsed) {
         return invite;
       }
@@ -563,33 +612,158 @@ class MockStore extends ChangeNotifier {
     required MemberRole role,
     required String createdBy,
     Duration? validFor,
+    String? customRoleName,
+    String? customRoleId,
+    String? inviteId,
   }) {
-    final inviteId = _uuid.v4();
+    final id = inviteId ?? _uuid.v4();
     final code = _generateGloballyUniqueNumericCode();
     // 매장·직책과 무관하게 코드는 전역 1:1 (같은 코드 → 다른 방 진입 불가)
-    assert(
-      !_isInviteCodeTaken(code),
-      'invite code collision: $code',
-    );
+    if (_isInviteCodeTaken(code)) {
+      throw StateError('초대 코드 충돌이 발생했습니다. 다시 시도해주세요.');
+    }
     final invite = RoomInviteModel(
-      id: inviteId,
+      id: id,
       roomId: roomId,
       code: code,
       role: role,
       createdBy: createdBy,
+      customRoleName: customRoleName,
+      customRoleId: customRoleId,
       expiresAt: validFor != null ? KstDateTime.now().add(validFor) : null,
       createdAt: KstDateTime.now(),
     );
-    invites[inviteId] = invite;
+    invites[id] = invite;
     notifyListeners();
     return invite;
   }
+
+  /// 커스텀 직책 생성 + 전역 유일 초대 코드 발급
+  RoomCustomRoleModel createCustomRoleWithInvite({
+    required String roomId,
+    required String roleName,
+    MemberRole baseRole = MemberRole.staff,
+    Duration validFor = const Duration(days: 365),
+  }) {
+    final user = _session.currentUser;
+    if (user == null) throw const NotAuthenticatedException();
+
+    final membership = getMembership(roomId, user.uid);
+    if (membership == null || !membership.role.canInviteMembers) {
+      throw const RoomPermissionDeniedException('초대 권한이 없습니다.');
+    }
+    if (!rooms.containsKey(roomId)) {
+      throw const RoomNotFoundException();
+    }
+
+    final name = roleName.trim();
+    if (name.length < 2) {
+      throw ArgumentError('직책명은 2자 이상이어야 합니다.');
+    }
+    if (name.length > 20) {
+      throw ArgumentError('직책명은 20자 이하여야 합니다.');
+    }
+    if (!MemberRole.invitableRoles.contains(baseRole)) {
+      throw ArgumentError('권한 기준 직책이 올바르지 않습니다.');
+    }
+
+    // 방 내 동일 직책명 중복 금지
+    final nameTaken = customRoles.values.any(
+      (r) =>
+          r.roomId == roomId &&
+          r.isActive &&
+          r.name.trim().toLowerCase() == name.toLowerCase(),
+    );
+    if (nameTaken) {
+      throw StateError('이미 같은 이름의 직책이 있습니다.');
+    }
+
+    final roleId = _uuid.v4();
+    final invite = _putInvite(
+      roomId: roomId,
+      role: baseRole,
+      createdBy: user.uid,
+      validFor: validFor,
+      customRoleName: name,
+      customRoleId: roleId,
+    );
+
+    final custom = RoomCustomRoleModel(
+      id: roleId,
+      roomId: roomId,
+      name: name,
+      baseRole: baseRole,
+      inviteCode: invite.code,
+      inviteId: invite.id,
+      createdBy: user.uid,
+      createdAt: KstDateTime.now(),
+    );
+    customRoles[roleId] = custom;
+    notifyListeners();
+    return custom;
+  }
+
+  List<RoomCustomRoleModel> customRolesForRoom(String roomId) {
+    return customRoles.values
+        .where((r) => r.roomId == roomId && r.isActive)
+        .toList()
+      ..sort((a, b) => (b.createdAt ?? DateTime(0))
+          .compareTo(a.createdAt ?? DateTime(0)));
+  }
+
+  /// 커스텀 직책 삭제 — 초대 즉시 무효화 + 소속 멤버 표시명 정리(권한 유지)
+  void deleteCustomRole({
+    required String roomId,
+    required String roleId,
+  }) {
+    final user = _session.currentUser;
+    if (user == null) throw const NotAuthenticatedException();
+    final membership = getMembership(roomId, user.uid);
+    if (membership == null || !membership.role.canInviteMembers) {
+      throw const RoomPermissionDeniedException('권한이 없습니다.');
+    }
+
+    final role = customRoles[roleId];
+    if (role == null || role.roomId != roomId) return;
+
+    customRoles.remove(roleId);
+
+    final invite = invites[role.inviteId];
+    if (invite != null) {
+      invites[role.inviteId] = invite.copyWith(isActive: false);
+    }
+
+    final roleName = role.name.trim().toLowerCase();
+    for (final entry in members.entries.toList()) {
+      final m = entry.value;
+      if (m.roomId != roomId || !m.isActive) continue;
+      final byId = m.customRoleId != null && m.customRoleId == roleId;
+      final byName = (m.customRoleName?.trim().toLowerCase() ?? '') == roleName;
+      if (!byId && !byName) continue;
+      // baseRole(권한)은 유지 — 커스텀 표시만 제거 → 직원/알바/매니저 라벨로 복귀
+      members[entry.key] = m.clearedCustomRole();
+    }
+    notifyListeners();
+  }
+
+  /// [deleteCustomRole] 별칭
+  void deactivateCustomRole({
+    required String roomId,
+    required String roleId,
+  }) =>
+      deleteCustomRole(roomId: roomId, roleId: roleId);
 
   RoomMemberModel joinWithInviteCode(String rawCode) {
     final user = _session.currentUser;
     if (user == null) throw const NotAuthenticatedException();
 
     final code = rawCode.trim();
+    if (code.isEmpty) {
+      throw const InviteInvalidException('초대 코드를 입력해주세요.');
+    }
+    if (!_isNumericInviteCode(code)) {
+      throw const InviteInvalidException('초대 코드는 숫자만 입력할 수 있습니다.');
+    }
     final matches = invites.values
         .where((i) => i.isActive && i.code == code)
         .toList();
@@ -598,8 +772,16 @@ class MockStore extends ChangeNotifier {
       throw const InviteInvalidException('초대 코드가 올바르지 않습니다.');
     }
     final invite = matches.isEmpty ? null : matches.first;
-    if (invite == null || !invite.canBeUsed) {
-      throw const InviteInvalidException();
+    if (invite == null) {
+      throw const InviteInvalidException('존재하지 않거나 잘못된 초대 코드입니다.');
+    }
+    if (!invite.canBeUsed) {
+      throw const InviteInvalidException('만료되었거나 사용이 끝난 초대입니다.');
+    }
+    // 비활성 포함 전역 매칭 — 재발급 후 옛 코드 잔존 방지
+    final byCode = invites.values.where((i) => i.code == code).toList();
+    if (byCode.length != 1 || byCode.first.id != invite.id) {
+      throw const InviteInvalidException('존재하지 않거나 잘못된 초대 코드입니다.');
     }
 
     final room = rooms[invite.roomId];
@@ -615,18 +797,26 @@ class MockStore extends ChangeNotifier {
       throw const AlreadyRoomMemberException();
     }
 
+    final targetRoomId = invite.roomId;
+
+    // 멤버십은 이 방 전용 문서만 덮어씀 — 타 방 멤버/계약/직책을 가져오지 않음
     final member = RoomMemberModel(
-      roomId: invite.roomId,
+      roomId: targetRoomId,
       userId: user.uid,
       role: invite.role,
       displayName: user.displayName,
+      customRoleName: invite.customRoleName,
+      customRoleId: invite.customRoleId,
+      isActive: true,
       contract: const EmployeeContractModel(),
       joinedAt: KstDateTime.now(),
     );
     members[docId] = member;
 
-    rooms[invite.roomId] = room.copyWith(
-      memberCount: room.memberCount + (existing == null ? 1 : 0),
+    final shouldIncrement =
+        existing == null || !existing.isActive;
+    rooms[targetRoomId] = room.copyWith(
+      memberCount: room.memberCount + (shouldIncrement ? 1 : 0),
       updatedAt: KstDateTime.now(),
     );
 
@@ -636,21 +826,23 @@ class MockStore extends ChangeNotifier {
       isActive: invite.maxUses == null || nextUsed < invite.maxUses!,
     );
 
-    // 합류 시 오늘 근무표 1건 자동 시드 (확인 테스트용)
-    _seedTodaySchedule(
-      roomId: invite.roomId,
-      workerId: user.uid,
-      assignedBy: invite.createdBy,
-      hourlyWage: member.hourlyWage ?? AppConstants.minimumHourlyWage,
-    );
+    // 가입 = 멤버십만. 타 방 스케줄·출퇴근·대타·근태수정을 이 방으로 복사·시드 금지.
+    assert(() {
+      final leaked = schedules.values.any(
+        (s) =>
+            s.roomId == targetRoomId &&
+            s.workerId == user.uid &&
+            s.note == '목업 샘플 근무',
+      );
+      return !leaked;
+    }());
 
     notifyListeners();
 
-    // 1) 직원 등록 → 사장
     AppNotificationDispatcher.staffJoined(
       ownerUid: room.ownerId,
       staffDisplayName: member.displayName,
-      storeId: invite.roomId,
+      storeId: targetRoomId,
       staffUid: user.uid,
     );
 
@@ -936,40 +1128,6 @@ class MockStore extends ChangeNotifier {
     return getMembership(roomId, userId)?.displayName ?? userId;
   }
 
-  /// 오늘 09:00–18:00 샘플 근무표
-  ScheduleModel _seedTodaySchedule({
-    required String roomId,
-    required String workerId,
-    required String assignedBy,
-    required int hourlyWage,
-  }) {
-    final now = KstDateTime.now();
-    final start = DateTime(now.year, now.month, now.day, 9);
-    final end = DateTime(now.year, now.month, now.day, 18);
-    final id = _uuid.v4();
-    final schedule = ScheduleModel(
-      id: id,
-      roomId: roomId,
-      workerId: workerId,
-      assignedBy: assignedBy,
-      date: DateFormat('yyyy-MM-dd').format(start),
-      startTime: start,
-      endTime: end,
-      isConfirmed: false,
-      status: ScheduleStatus.normal,
-      estimatedPay: PayrollCalculator.estimatePay(
-        startTime: start,
-        endTime: end,
-        hourlyWage: hourlyWage,
-      ),
-      note: '목업 샘플 근무',
-      createdAt: now,
-      updatedAt: now,
-    );
-    schedules[id] = schedule;
-    return schedule;
-  }
-
   /// 사장/매니저 — 해당 근무 결근 처리
   ScheduleModel markScheduleAbsent(String scheduleId) {
     final user = _session.currentUser;
@@ -1052,11 +1210,12 @@ class MockStore extends ChangeNotifier {
     var didConfirm = false;
     ScheduleModel result;
 
-    // 기간 선택 배정은 같은 묶음을 한 번에 확인
+    // 기간 선택 배정은 같은 방·같은 묶음만 한 번에 확인 (타 방 데이터 혼선 방지)
     final batchId = schedule.assignmentBatchId;
     if (schedule.isPeriodBatch && batchId != null) {
       ScheduleModel? latest;
       for (final s in schedules.values) {
+        if (s.roomId != schedule.roomId) continue;
         if (s.assignmentBatchId != batchId) continue;
         if (s.workerId != user.uid) continue;
         if (s.isConfirmed) continue;
@@ -1671,6 +1830,7 @@ class MockStore extends ChangeNotifier {
   List<ScheduleModel> schedulesForRoom(String roomId) {
     final list =
         schedules.values.where((s) => s.roomId == roomId).toList();
+    assert(list.every((s) => s.roomId == roomId));
     list.sort((a, b) => b.startTime.compareTo(a.startTime));
     return list;
   }
@@ -1679,6 +1839,9 @@ class MockStore extends ChangeNotifier {
     final list = schedules.values
         .where((s) => s.roomId == roomId && s.workerId == workerId)
         .toList();
+    assert(
+      list.every((s) => s.roomId == roomId && s.workerId == workerId),
+    );
     list.sort((a, b) => b.startTime.compareTo(a.startTime));
     return list;
   }
@@ -1719,8 +1882,13 @@ class MockStore extends ChangeNotifier {
   }
 
   ShiftSwapRequest? openSwapForSchedule(String scheduleId) {
+    final schedule = schedules[scheduleId];
+    if (schedule == null) return null;
     for (final s in shiftSwaps.values) {
-      if (s.scheduleId == scheduleId && s.status.isOpen) return s;
+      if (s.scheduleId != scheduleId || !s.status.isOpen) continue;
+      // 스케줄이 속한 방의 대타만 인정
+      if (s.roomId != schedule.roomId) continue;
+      return s;
     }
     return null;
   }
@@ -2148,10 +2316,15 @@ class MockStore extends ChangeNotifier {
   // 근태 수정 요청 (사장 → 알바 상호 승인)
   // ---------------------------------------------------------------------------
 
-  List<CommuteCorrectionRequest> pendingCorrectionsForWorker(String workerId) {
+  /// 해당 방의 근태 수정 요청만 (타 방 요청과 절대 섞지 않음)
+  List<CommuteCorrectionRequest> pendingCorrectionsForWorker({
+    required String roomId,
+    required String workerId,
+  }) {
     return commuteCorrections.values
         .where(
           (r) =>
+              r.roomId == roomId &&
               r.workerId == workerId &&
               r.status == CommuteCorrectionStatus.pending,
         )
@@ -2617,6 +2790,85 @@ class MockStore extends ChangeNotifier {
           );
     }
     return total;
+  }
+
+  /// 사장 대시보드 — 월간(1일~오늘/월말) 인건비·근무시간 로컬 집계
+  MonthlyLaborCost monthlyLaborCost({
+    required String roomId,
+    required int year,
+    required int month,
+    bool includeWeeklyHoliday = false,
+    bool includeEmployerSocialInsurance = false,
+    double employerSocialInsuranceRate = 0.099,
+  }) {
+    final now = DateTime.now();
+    final dim = DateTime(year, month + 1, 0).day;
+    final isCurrent = now.year == year && now.month == month;
+    final endDay = isCurrent ? now.day.clamp(1, dim) : dim;
+    final fromKey =
+        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-01';
+    final toKey =
+        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${endDay.toString().padLeft(2, '0')}';
+
+    var totalBase = 0;
+    var totalWeekly = 0;
+    var totalNetMinutes = 0;
+    final workerIds = <String>{};
+
+    for (final s in schedulesForRoom(roomId)) {
+      if (s.isAbsent) continue;
+      if (s.date.compareTo(fromKey) < 0 || s.date.compareTo(toKey) > 0) {
+        continue;
+      }
+      workerIds.add(s.workerId);
+      final wage = getMembership(roomId, s.workerId)?.hourlyWage ??
+          s.payEstimate?.hourlyWage ??
+          AppConstants.minimumHourlyWage;
+      final wantWeek = includeWeeklyHoliday ||
+          s.includeWeeklyHoliday ||
+          (getMembership(roomId, s.workerId)?.contract.isWeekPayEnabled ??
+              false);
+      final wantOt = s.includeOvertimeNight ||
+          (getMembership(roomId, s.workerId)
+                  ?.contract
+                  .includeOvertimeNight ??
+              false);
+      final estimate = s.payEstimate ??
+          PayrollCalculator.estimate(
+            startTime: s.startTime,
+            endTime: s.endTime,
+            hourlyWage: wage,
+            breakMinutes: s.breakMinutes,
+            includeWeeklyHoliday: wantWeek,
+            includeOvertimeNight: wantOt,
+          );
+      totalBase += estimate.basePay + estimate.overtimeNightPay;
+      totalWeekly += wantWeek ? estimate.weeklyHolidayPay : 0;
+      totalNetMinutes += estimate.netWorkedMinutes;
+    }
+
+    final totalLabor = totalBase + totalWeekly;
+    final insurance = includeEmployerSocialInsurance
+        ? (totalLabor * employerSocialInsuranceRate).round()
+        : 0;
+
+    return MonthlyLaborCost(
+      roomId: roomId,
+      year: year,
+      month: month,
+      periodFrom: fromKey,
+      periodTo: toKey,
+      totalLaborCost: totalLabor,
+      totalWorkHours: (totalNetMinutes / 60.0 * 100).round() / 100.0,
+      activeWorkerCount: workerIds.length,
+      includeWeeklyHoliday: includeWeeklyHoliday,
+      includeEmployerSocialInsurance: includeEmployerSocialInsurance,
+      employerSocialInsuranceRate: employerSocialInsuranceRate,
+      basePay: totalBase,
+      weeklyHolidayPay: totalWeekly,
+      employerSocialInsuranceEstimate: insurance,
+      source: 'mock',
+    );
   }
 
   // ---------------------------------------------------------------------------

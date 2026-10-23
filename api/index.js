@@ -89,6 +89,7 @@ app.get(['/api', '/', '/api/'], (_req, res) => {
         health: 'GET /api/health',
         authPing: 'GET /api/auth/ping',
         schedulesPing: 'GET /api/schedules/ping',
+        laborCostMonthly: 'GET /api/labor-cost/monthly?roomId&year&month',
         accountDelete: 'DELETE /api/account',
       },
       rateLimit: {
@@ -119,6 +120,77 @@ app.get(['/api/schedules/ping', '/schedules/ping'], (_req, res) => {
     message: 'schedules router ready',
   });
 });
+
+/**
+ * 월간 인건비 집계
+ * GET /api/labor-cost/monthly?roomId=&year=&month=
+ * 선택: includeWeeklyHoliday=true|false
+ *       includeEmployerSocialInsurance=true|false
+ */
+app.get(
+  ['/api/labor-cost/monthly', '/labor-cost/monthly'],
+  (req, res, next) => {
+    Promise.resolve(
+      (async () => {
+        try {
+          // eslint-disable-next-line global-require
+          const { computeMonthlyLaborCost } = require('./lib/laborCostMonthly');
+          const q = req.query || {};
+          const roomId = String(q.roomId || '').trim();
+          const year = Number.parseInt(String(q.year || ''), 10);
+          const month = Number.parseInt(String(q.month || ''), 10);
+          const includeWeeklyHoliday =
+            String(q.includeWeeklyHoliday || '').toLowerCase() === 'true';
+          const includeEmployerSocialInsurance =
+            String(q.includeEmployerSocialInsurance || '').toLowerCase() ===
+            'true';
+
+          if (!roomId) {
+            return res.status(400).json({
+              ok: false,
+              error: 'room_id_required',
+              message: 'roomId가 필요합니다.',
+            });
+          }
+          if (!Number.isFinite(year) || !Number.isFinite(month)) {
+            return res.status(400).json({
+              ok: false,
+              error: 'invalid_period',
+              message: 'year, month가 필요합니다. (예: year=2026&month=10)',
+            });
+          }
+
+          const result = await computeMonthlyLaborCost({
+            roomId,
+            year,
+            month,
+            includeWeeklyHoliday,
+            includeEmployerSocialInsurance,
+          });
+          return res.status(200).json(result);
+        } catch (e) {
+          const code = (e && e.code) || 'labor_cost_failed';
+          const status =
+            code === 'firebase_admin_not_configured'
+              ? 503
+              : code === 'room_id_required' ||
+                  code === 'invalid_year' ||
+                  code === 'invalid_month' ||
+                  code === 'invalid_period'
+                ? 400
+                : 500;
+          console.error('[labor-cost/monthly]', e);
+          if (res.headersSent) return undefined;
+          return res.status(status).json({
+            ok: false,
+            error: code,
+            message: (e && e.message) || '인건비 집계에 실패했습니다.',
+          });
+        }
+      })(),
+    ).catch(next);
+  },
+);
 
 function _bearerToken(req) {
   const h = req.headers.authorization;
