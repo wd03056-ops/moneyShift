@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_text_input_defaults.dart';
-import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
 import '../../../services/user_firestore_service.dart';
@@ -25,7 +24,9 @@ class ProfileSetupScreen extends StatefulWidget {
 
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
   late final TextEditingController _nameController;
+  final _nameFocus = FocusNode();
   final _users = UserFirestoreService();
   bool _saving = false;
 
@@ -39,12 +40,29 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         ? widget.initialName!.trim()
         : (MockSession.instance.currentUser?.displayName ?? '');
     _nameController = TextEditingController(text: hint);
+    _nameFocus.addListener(_onFocusChange);
   }
 
   @override
   void dispose() {
+    _nameFocus.removeListener(_onFocusChange);
+    _nameFocus.dispose();
+    _scrollController.dispose();
     _nameController.dispose();
     super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!_nameFocus.hasFocus) return;
+    // 키보드·IME 툴바가 올라온 뒤 입력란이 보이도록 스크롤
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   String? _validate(String? value) {
@@ -77,7 +95,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       if (!mounted) return;
       MockSession.instance.completeRealNameSetup(realName);
       debugPrint('[ProfileSetup] realName saved uid=$uid');
-      // MockSession notify → main home 이 MainShell 로 전환
     } catch (e, st) {
       debugPrint('[ProfileSetup] FAIL: $e');
       debugPrint('$st');
@@ -94,7 +111,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   }
 
   Future<void> _logout() async {
-    // 세션만 끊으면 AuthHomeGate → LoggedOutHome → 로그인 push (뒤로가기 가능)
     MockSession.instance.logout();
     final nav = Navigator.of(context);
     if (nav.canPop()) {
@@ -105,13 +121,17 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return PopScope(
       canPop: false,
       child: Scaffold(
         backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: true,
         appBar: AppBar(
           automaticallyImplyLeading: false,
+          // 테마 titleSpacing:0 + leading 없음 → 본문(20)과 맞춤
+          titleSpacing: 20,
           title: const Text('프로필 설정'),
           actions: [
             TextButton(
@@ -127,72 +147,105 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         ),
         body: Form(
           key: _formKey,
-          child: FixedBottomPage(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-            bottom: StickyActionBar(
-              children: [
-                StickyActionButton(
-                  label: '확인',
-                  variant: StickyActionVariant.filled,
-                  isLoading: _saving,
-                  onPressed: _saving ? null : _submit,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: ClampingScrollPhysics(),
+                      ),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight - 40,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              '실명을 입력해 주세요',
+                              style: textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '정확한 급여 정산 및 출퇴근 관리를 위해 실명을 입력해 주세요.',
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textSecondary,
+                                height: 1.45,
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                            TextFormField(
+                              controller: _nameController,
+                              focusNode: _nameFocus,
+                              enabled: !_saving,
+                              autofocus: true,
+                              textInputAction: TextInputAction.done,
+                              textCapitalization: TextCapitalization.none,
+                              keyboardType: TextInputType.text,
+                              autocorrect: AppTextInputDefaults.autocorrect,
+                              enableSuggestions:
+                                  AppTextInputDefaults.enableSuggestions,
+                              spellCheckConfiguration: AppTextInputDefaults
+                                  .spellCheckConfiguration,
+                              smartDashesType:
+                                  AppTextInputDefaults.smartDashesType,
+                              smartQuotesType:
+                                  AppTextInputDefaults.smartQuotesType,
+                              style: const TextStyle(
+                                decoration: TextDecoration.none,
+                              ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.deny(
+                                  RegExp(r'\n'),
+                                ),
+                                LengthLimitingTextInputFormatter(30),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: '실명',
+                                hintText: '예: 홍길동',
+                              ),
+                              validator: _validate,
+                              onFieldSubmitted: (_) => _submit(),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '카카오 닉네임이 아닌, 급여·근로계약에 쓰는 이름을 입력해 주세요.',
+                              style: textTheme.bodySmall?.copyWith(
+                                color: AppColors.textCaption,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              ],
-            ),
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '실명을 입력해 주세요',
-                  style: textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.3,
+              ),
+              StickyActionBar(
+                elevated: true,
+                // 키보드·IME 툴바 위에서는 시스템 inset 만 사용 (이중 SafeArea 방지)
+                safeAreaBottom: !keyboardOpen,
+                children: [
+                  StickyActionButton(
+                    label: '확인',
+                    variant: StickyActionVariant.filled,
+                    isLoading: _saving,
+                    onPressed: _saving ? null : _submit,
                   ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '정확한 급여 정산 및 출퇴근 관리를 위해 실명을 입력해 주세요.',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 28),
-                TextFormField(
-                  controller: _nameController,
-                  enabled: !_saving,
-                  autofocus: true,
-                  textInputAction: TextInputAction.done,
-                  textCapitalization: TextCapitalization.none,
-                  keyboardType: TextInputType.text,
-                  autocorrect: AppTextInputDefaults.autocorrect,
-                  enableSuggestions: AppTextInputDefaults.enableSuggestions,
-                  spellCheckConfiguration:
-                      AppTextInputDefaults.spellCheckConfiguration,
-                  smartDashesType: AppTextInputDefaults.smartDashesType,
-                  smartQuotesType: AppTextInputDefaults.smartQuotesType,
-                  style: const TextStyle(decoration: TextDecoration.none),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.deny(RegExp(r'\n')),
-                    LengthLimitingTextInputFormatter(30),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: '실명',
-                    hintText: '예: 홍길동',
-                  ),
-                  validator: _validate,
-                  onFieldSubmitted: (_) => _submit(),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '카카오 닉네임이 아닌, 급여·근로계약에 쓰는 이름을 입력해 주세요.',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: AppColors.textCaption,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
         ),
       ),

@@ -7,54 +7,90 @@
  * 선택:
  * - FIREBASE_PROJECT_ID : 프로젝트 ID (JSON에 project_id 없을 때)
  * - GOOGLE_APPLICATION_CREDENTIALS : 로컬 파일 경로 (개발용)
+ *
+ * JSON.parse / 초기화 실패 시 throw 하지 않고 { error } 로 반환한다.
  */
 let _app = null;
 let _db = null;
 let _initError = null;
 let _initLogged = false;
 
-function _parseServiceAccount(raw) {
-  const trimmed = String(raw || '').trim();
-  if (!trimmed) return null;
-
-  let parsed;
+/**
+ * @returns {{ ok: true, serviceAccount: object } | { ok: false, error: string }}
+ */
+function parseServiceAccount(raw) {
   try {
-    parsed = JSON.parse(trimmed);
-  } catch (e) {
-    // Vercel UI에서 따옴표 없이 붙여넣은 경우 대비 — 한 번 더 시도
-    try {
-      parsed = JSON.parse(trimmed.replace(/\r\n/g, '\\n'));
-    } catch {
-      throw new Error(`FIREBASE_SERVICE_ACCOUNT_JSON parse failed: ${e.message}`);
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) {
+      return { ok: false, error: 'FIREBASE_SERVICE_ACCOUNT_JSON empty' };
     }
-  }
 
-  if (parsed && typeof parsed.private_key === 'string') {
-    // 환경변수에 \\n 으로 들어온 PEM 줄바꿈 복원
-    parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+    let parsed = null;
+
+    // 1) 일반 JSON
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (_) {
+      // 2) 줄바꿈이 실제 \n 으로 깨진 경우
+      try {
+        parsed = JSON.parse(trimmed.replace(/\r\n/g, '\\n'));
+      } catch (_) {
+        // 3) Base64 인코딩된 JSON
+        try {
+          const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
+          parsed = JSON.parse(decoded);
+        } catch (e3) {
+          return {
+            ok: false,
+            error: `FIREBASE_SERVICE_ACCOUNT_JSON parse failed: ${e3.message}`,
+          };
+        }
+      }
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return { ok: false, error: 'service account JSON is not an object' };
+    }
+
+    if (typeof parsed.private_key === 'string') {
+      parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+    }
+
+    if (!parsed.client_email || !parsed.private_key) {
+      return {
+        ok: false,
+        error: 'FIREBASE_SERVICE_ACCOUNT_JSON must include client_email and private_key',
+      };
+    }
+
+    return { ok: true, serviceAccount: parsed };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.message || 'parseServiceAccount unexpected error',
+    };
   }
-  return parsed;
 }
 
 function getAdmin() {
-  if (_app) {
-    try {
-      // eslint-disable-next-line global-require
-      return { admin: require('firebase-admin'), app: _app, db: _db, error: null };
-    } catch (e) {
-      return {
-        admin: null,
-        app: null,
-        db: null,
-        error: e.message || 'firebase_admin_require_failed',
-      };
-    }
-  }
-  if (_initError) {
-    return { admin: null, app: null, db: null, error: _initError };
-  }
-
   try {
+    if (_app) {
+      try {
+        // eslint-disable-next-line global-require
+        return { admin: require('firebase-admin'), app: _app, db: _db, error: null };
+      } catch (e) {
+        return {
+          admin: null,
+          app: null,
+          db: null,
+          error: e.message || 'firebase_admin_require_failed',
+        };
+      }
+    }
+    if (_initError) {
+      return { admin: null, app: null, db: null, error: _initError };
+    }
+
     // eslint-disable-next-line global-require
     const admin = require('firebase-admin');
     if (admin.apps.length) {
@@ -68,15 +104,18 @@ function getAdmin() {
     let projectId = process.env.FIREBASE_PROJECT_ID || undefined;
 
     if (raw && String(raw).trim()) {
-      const serviceAccount = _parseServiceAccount(raw);
-      if (!serviceAccount || !serviceAccount.client_email || !serviceAccount.private_key) {
-        throw new Error(
-          'FIREBASE_SERVICE_ACCOUNT_JSON must include client_email and private_key',
-        );
+      const parsed = parseServiceAccount(raw);
+      if (!parsed.ok) {
+        _initError = parsed.error;
+        if (!_initLogged) {
+          console.error('[firebaseAdmin]', _initError);
+          _initLogged = true;
+        }
+        return { admin: null, app: null, db: null, error: _initError };
       }
-      credential = admin.credential.cert(serviceAccount);
-      if (!projectId && serviceAccount.project_id) {
-        projectId = serviceAccount.project_id;
+      credential = admin.credential.cert(parsed.serviceAccount);
+      if (!projectId && parsed.serviceAccount.project_id) {
+        projectId = parsed.serviceAccount.project_id;
       }
     } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       credential = admin.credential.applicationDefault();
@@ -123,4 +162,4 @@ function isConfigured() {
   }
 }
 
-module.exports = { getAdmin, isConfigured };
+module.exports = { getAdmin, isConfigured, parseServiceAccount };

@@ -4,6 +4,7 @@ import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 
 import '../../../core/config/kakao_config.dart';
 import '../../../mock/mock_user.dart';
+import 'auth_flow_exception.dart';
 
 /// 카카오 로그인 성공 결과 (토큰 + 사용자 기본 정보)
 class KakaoAuthResult {
@@ -62,30 +63,89 @@ class KakaoAuthService {
   /// 카카오톡 설치 여부에 따라 Talk / Account 로그인 후 사용자 정보 조회
   Future<KakaoAuthResult> signIn() async {
     if (!KakaoConfig.isConfigured) {
-      throw StateError(
-        '카카오 네이티브 앱 키가 설정되지 않았습니다. '
-        'KakaoConfig / kakao.properties / Kakao-Keys.xcconfig 를 확인하세요.',
+      throw const AuthFlowException(
+        '카카오 네이티브 앱 키가 설정되지 않았습니다.',
+        code: 'kakao_not_configured',
       );
     }
 
-    final token = await _login();
-    final user = await UserApi.instance.me();
-    final account = user.kakaoAccount;
-    final profile = account?.profile;
+    try {
+      final token = await _login();
+      final user = await UserApi.instance.me();
+      final account = user.kakaoAccount;
+      final profile = account?.profile;
 
-    final nickname = profile?.nickname?.trim();
-    final resolvedName = (nickname != null && nickname.isNotEmpty)
-        ? nickname
-        : '카카오 사용자';
+      final nickname = profile?.nickname?.trim();
+      final resolvedName = (nickname != null && nickname.isNotEmpty)
+          ? nickname
+          : '카카오 사용자';
 
-    return KakaoAuthResult(
-      accessToken: token.accessToken,
-      refreshToken: token.refreshToken,
-      userId: '${user.id}',
-      nickname: resolvedName,
-      email: account?.email,
-      profileImageUrl: profile?.profileImageUrl,
-    );
+      return KakaoAuthResult(
+        accessToken: token.accessToken,
+        refreshToken: token.refreshToken,
+        userId: '${user.id}',
+        nickname: resolvedName,
+        email: account?.email,
+        profileImageUrl: profile?.profileImageUrl,
+      );
+    } on AuthFlowException {
+      rethrow;
+    } on KakaoAuthException catch (e) {
+      if (e.error == AuthErrorCause.accessDenied) {
+        throw const AuthFlowException(
+          '카카오 로그인이 취소되었습니다.',
+          code: 'kakao_cancelled',
+          userCancelled: true,
+        );
+      }
+      throw AuthFlowException(
+        e.errorDescription ?? '카카오 인증에 실패했습니다.',
+        code: 'kakao_auth_${e.error}',
+      );
+    } on KakaoClientException catch (e) {
+      if (e.reason == ClientErrorCause.cancelled) {
+        throw const AuthFlowException(
+          '카카오 로그인이 취소되었습니다.',
+          code: 'kakao_cancelled',
+          userCancelled: true,
+        );
+      }
+      final lower = e.msg.toLowerCase();
+      final isNetwork = lower.contains('network') ||
+          lower.contains('socket') ||
+          lower.contains('timeout') ||
+          lower.contains('연결');
+      throw AuthFlowException(
+        e.msg.isNotEmpty ? e.msg : '카카오 로그인에 실패했습니다.',
+        code: isNetwork ? 'kakao_network' : 'kakao_client_${e.reason.name}',
+        network: isNetwork,
+      );
+    } on PlatformException catch (e) {
+      if (e.code == 'CANCELED' || e.code == 'cancelled') {
+        throw const AuthFlowException(
+          '카카오 로그인이 취소되었습니다.',
+          code: 'kakao_cancelled',
+          userCancelled: true,
+        );
+      }
+      throw AuthFlowException(
+        e.message ?? '카카오 로그인에 실패했습니다.',
+        code: 'kakao_platform_${e.code}',
+      );
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('CANCELED') || msg.contains('cancelled')) {
+        throw const AuthFlowException(
+          '카카오 로그인이 취소되었습니다.',
+          code: 'kakao_cancelled',
+          userCancelled: true,
+        );
+      }
+      throw AuthFlowException(
+        '카카오 로그인 중 오류가 발생했습니다.',
+        code: 'kakao_unknown',
+      );
+    }
   }
 
   Future<OAuthToken> _login() async {
@@ -95,6 +155,7 @@ class KakaoAuthService {
       } catch (error) {
         // 사용자가 카카오톡 동의/권한 화면에서 취소한 경우 → 계정 로그인으로 이어가지 않음
         if (_isUserCanceled(error)) rethrow;
+        // 톡 미지원·실패 시 계정(웹) 로그인
         return await UserApi.instance.loginWithKakaoAccount();
       }
     }
@@ -156,6 +217,9 @@ class KakaoAuthService {
     }
     if (error is KakaoClientException) {
       return error.reason == ClientErrorCause.cancelled;
+    }
+    if (error is AuthFlowException) {
+      return error.userCancelled;
     }
     return false;
   }

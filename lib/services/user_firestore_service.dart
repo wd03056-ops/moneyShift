@@ -55,13 +55,14 @@ class UserFirestoreService {
   }
 
   Future<UserModel> upsert(UserModel user, {bool mergeKakao = false}) async {
+    if (mergeKakao) {
+      return upsertKakaoProfile(user);
+    }
     try {
       final ref = _col.doc(user.uid);
       final existing = await ref.get();
       final isCreate = !existing.exists;
-      final data = mergeKakao
-          ? user.toKakaoUpsertMap(isCreate: isCreate)
-          : user.toFirestore(forCreate: isCreate);
+      final data = user.toFirestore(forCreate: isCreate);
 
       await ref.set(data, SetOptions(merge: true));
       debugPrint(
@@ -75,6 +76,67 @@ class UserFirestoreService {
       debugPrint(
         '[UserFirestore] upsert FAIL uid=${user.uid} code=${e.code} '
         'message=${e.message}',
+      );
+      debugPrint('$st');
+      rethrow;
+    }
+  }
+
+  /// 카카오 로그인용 — 트랜잭션으로 최초 생성 / 기존 유지 (레이스·중복 생성 방지)
+  ///
+  /// - 없으면: displayName·email·kakaoId·role·createdAt 생성
+  /// - 있으면: 카카오 프로필(닉네임·이미지·email)만 갱신, realName·role·ownedRoomCount 유지
+  Future<UserModel> upsertKakaoProfile(UserModel incoming) async {
+    final ref = _col.doc(incoming.uid);
+    try {
+      final result = await _db.runTransaction<UserModel>((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) {
+          final data = incoming.toKakaoUpsertMap(isCreate: true);
+          tx.set(ref, data, SetOptions(merge: true));
+          debugPrint(
+            '[UserFirestore] kakao create uid=${incoming.uid} '
+            'kakaoId=${incoming.kakaoId}',
+          );
+          return incoming.copyWith(
+            createdAt: incoming.createdAt ?? DateTime.now(),
+            updatedAt: DateTime.now(),
+          );
+        }
+
+        final existing = UserModel.fromFirestore(snap);
+        final merged = incoming.copyWith(
+          // 온보딩 실명·역할·매장 수·FCM 은 기존 유지
+          realName: existing.realName,
+          role: existing.role,
+          ownedRoomCount: existing.ownedRoomCount,
+          fcmToken: existing.fcmToken,
+          fcmTokens: existing.fcmTokens,
+          createdAt: existing.createdAt,
+          // 카카오에서 비어 있으면 기존 email 유지
+          email: incoming.email.trim().isNotEmpty
+              ? incoming.email
+              : existing.email,
+          displayName: incoming.displayName.trim().isNotEmpty
+              ? incoming.displayName
+              : existing.displayName,
+        );
+        tx.set(
+          ref,
+          merged.toKakaoUpsertMap(isCreate: false),
+          SetOptions(merge: true),
+        );
+        debugPrint(
+          '[UserFirestore] kakao merge uid=${merged.uid} '
+          'hasRealName=${merged.hasRealName}',
+        );
+        return merged.copyWith(updatedAt: DateTime.now());
+      });
+      return result;
+    } on FirebaseException catch (e, st) {
+      debugPrint(
+        '[UserFirestore] upsertKakaoProfile FAIL uid=${incoming.uid} '
+        'code=${e.code} message=${e.message}',
       );
       debugPrint('$st');
       rethrow;

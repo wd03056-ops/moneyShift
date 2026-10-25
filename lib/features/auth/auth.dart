@@ -2,6 +2,7 @@
 library;
 
 export 'data/account_deletion_service.dart';
+export 'data/auth_flow_exception.dart';
 export 'data/auth_integration_service.dart';
 export 'data/auth_service.dart';
 export 'data/kakao_auth_service.dart';

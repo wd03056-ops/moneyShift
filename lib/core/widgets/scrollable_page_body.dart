@@ -78,19 +78,46 @@ class FixedBottomPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: AppScrollView(
+    // 키보드로 viewport 가 줄어도 하단 바가 Column overflow 나지 않게 함
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bottomWidget = bottom;
+        if (bottomWidget == null) {
+          return AppScrollView(
             top: safeTop,
-            bottom: false,
+            bottom: true,
             padding: padding,
             child: body,
-          ),
-        ),
-        ?bottom,
-      ],
+          );
+        }
+
+        final maxH = constraints.maxHeight;
+        // 하단 바는 최대 높이의 45% — 넘치면 내부 스크롤
+        final bottomMax = maxH.isFinite && maxH > 0
+            ? (maxH * 0.45).clamp(72.0, maxH)
+            : 160.0;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: AppScrollView(
+                top: safeTop,
+                bottom: false,
+                padding: padding,
+                child: body,
+              ),
+            ),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: bottomMax),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: bottomWidget,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

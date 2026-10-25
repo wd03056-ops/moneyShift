@@ -160,6 +160,8 @@ class ApiService {
           headers: {
             'Authorization': 'Bearer $kakaoAccessToken',
           },
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 20),
           validateStatus: (_) => true,
         ),
       );
@@ -174,25 +176,72 @@ class ApiService {
           '[ApiService] auth/kakao FAIL status=${res.statusCode} body=$data',
         );
       }
+      final code = data['error']?.toString() ??
+          (ok ? null : 'http_${res.statusCode}');
       return KakaoFirebaseAuthResult(
         ok: ok,
         statusCode: res.statusCode,
         customToken: ok ? token : null,
         uid: data['uid']?.toString(),
-        message: data['message']?.toString() ??
-            (ok ? 'OK' : 'status=${res.statusCode}'),
+        errorCode: code,
+        message: _authKakaoUserMessage(
+          ok: ok,
+          statusCode: res.statusCode,
+          serverMessage: data['message']?.toString(),
+          errorCode: code,
+        ),
       );
     } on DioException catch (e) {
-      debugPrint('[ApiService] auth/kakao FAIL: ${e.message}');
+      debugPrint('[ApiService] auth/kakao FAIL: ${e.type} ${e.message}');
+      final network = e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError;
       return KakaoFirebaseAuthResult(
         ok: false,
         statusCode: e.response?.statusCode,
-        message: e.message ?? '연결 실패',
+        errorCode: network ? 'network' : 'dio_${e.type.name}',
+        network: network,
+        message: network
+            ? '서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.'
+            : (e.message ?? '토큰 교환 요청에 실패했습니다.'),
       );
     } catch (e) {
       debugPrint('[ApiService] auth/kakao FAIL: $e');
-      return KakaoFirebaseAuthResult(ok: false, message: '$e');
+      return KakaoFirebaseAuthResult(
+        ok: false,
+        errorCode: 'unknown',
+        message: '토큰 교환 중 오류가 발생했습니다.',
+      );
     }
+  }
+
+  static String _authKakaoUserMessage({
+    required bool ok,
+    int? statusCode,
+    String? serverMessage,
+    String? errorCode,
+  }) {
+    if (ok) return 'OK';
+    if (serverMessage != null && serverMessage.trim().isNotEmpty) {
+      return serverMessage.trim();
+    }
+    if (statusCode == 401) {
+      return '카카오 토큰이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요.';
+    }
+    if (statusCode == 403) {
+      return '카카오 계정 정보가 일치하지 않습니다.';
+    }
+    if (statusCode == 429) {
+      return '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.';
+    }
+    if (statusCode == 503 || errorCode == 'firebase_admin_not_configured') {
+      return '서버 인증 설정이 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.';
+    }
+    if (statusCode != null && statusCode >= 500) {
+      return '서버 오류로 로그인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+    }
+    return '로그인 토큰 교환에 실패했습니다. (status=$statusCode)';
   }
 
   /// `DELETE /api/account` — 서버 DB 익명화·언링크
@@ -362,14 +411,18 @@ class KakaoFirebaseAuthResult {
     this.statusCode,
     this.customToken,
     this.uid,
+    this.errorCode,
     this.message = '',
+    this.network = false,
   });
 
   final bool ok;
   final int? statusCode;
   final String? customToken;
   final String? uid;
+  final String? errorCode;
   final String message;
+  final bool network;
 }
 
 class AccountDeletionApiResult {

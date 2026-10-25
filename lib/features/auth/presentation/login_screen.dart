@@ -15,6 +15,7 @@ import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../mock/mock_user.dart';
 import '../../legal/legal_links.dart';
+import '../data/auth_flow_exception.dart';
 import '../data/auth_service.dart';
 import '../data/mock_auth_service.dart';
 import 'widgets/kakao_login_button.dart';
@@ -99,9 +100,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_busy) return;
 
     if (!KakaoConfig.isConfigured) {
-      _showMessage(
-        '카카오 네이티브 앱 키를 설정하세요. '
-        '(KakaoConfig / android/kakao.properties / ios Flutter Kakao-Keys.xcconfig)',
+      await _showErrorDialog(
+        '카카오 설정 필요',
+        '카카오 네이티브 앱 키를 설정하세요.\n'
+        '(KakaoConfig / android/kakao.properties)',
       );
       return;
     }
@@ -131,6 +133,15 @@ class _LoginScreenState extends State<LoginScreen> {
             ? '실명을 등록해 주세요'
             : '${result.user.preferredDisplayName}님, 카카오 로그인 완료',
       );
+    } on AuthFlowException catch (e, st) {
+      debugPrint('[LoginScreen] AuthFlowException ${e.code}: ${e.message}');
+      debugPrint('$st');
+      if (!mounted) return;
+      if (e.userCancelled) return;
+      await _showErrorDialog(
+        e.network ? '네트워크 오류' : '로그인 실패',
+        e.message,
+      );
     } on KakaoAuthException catch (e, st) {
       debugPrint(
         '[LoginScreen] KakaoAuthException ${e.error}: ${e.errorDescription}',
@@ -138,30 +149,39 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint('$st');
       if (!mounted) return;
       if (e.error == AuthErrorCause.accessDenied) return;
-      _showMessage('카카오 로그인 실패: ${e.errorDescription ?? e.error}');
+      await _showErrorDialog(
+        '카카오 로그인 실패',
+        e.errorDescription ?? e.error.toString(),
+      );
     } on KakaoClientException catch (e, st) {
       debugPrint('[LoginScreen] KakaoClientException ${e.reason}: ${e.msg}');
       debugPrint('$st');
       if (!mounted) return;
       if (e.reason == ClientErrorCause.cancelled) return;
-      _showMessage('카카오 로그인 실패: ${e.msg}');
+      await _showErrorDialog('카카오 로그인 실패', e.msg);
     } on FirebaseAuthException catch (e, st) {
       debugPrint('[LoginScreen] FirebaseAuthException ${e.code}: ${e.message}');
       debugPrint('$st');
       if (!mounted) return;
-      _showMessage('Firebase 인증 실패: ${e.message ?? e.code}');
+      await _showErrorDialog(
+        'Firebase 인증 실패',
+        e.message ?? e.code,
+      );
     } on FirebaseException catch (e, st) {
       debugPrint('[LoginScreen] FirebaseException ${e.code}: ${e.message}');
       debugPrint('$st');
       if (!mounted) return;
-      _showMessage('Firestore 저장 실패: ${e.message ?? e.code}');
+      await _showErrorDialog(
+        '사용자 정보 저장 실패',
+        e.message ?? e.code,
+      );
     } catch (e, st) {
       debugPrint('[LoginScreen] Kakao login FAIL: $e');
       debugPrint('$st');
       if (!mounted) return;
       final msg = e.toString();
       if (msg.contains('CANCELED') || msg.contains('cancelled')) return;
-      _showMessage('카카오 로그인 실패: $e');
+      await _showErrorDialog('로그인 실패', msg);
     } finally {
       if (mounted) setState(() => _kakaoLoading = false);
     }
@@ -170,6 +190,25 @@ class _LoginScreenState extends State<LoginScreen> {
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _showErrorDialog(String title, String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
     );
   }
 

@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:flutter/foundation.dart';
-import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 
 import '../../../core/config/dev_auth_config.dart';
 import '../../../core/config/kakao_config.dart';
@@ -11,6 +10,7 @@ import '../../../models/enums/member_role.dart';
 import '../../../models/user_model.dart';
 import '../../../services/fcm_service.dart';
 import '../../../services/user_firestore_service.dart';
+import 'auth_flow_exception.dart';
 import 'kakao_auth_service.dart';
 import 'mock_auth_service.dart';
 import 'mock_firestore_seed_service.dart';
@@ -18,7 +18,7 @@ import 'mock_firestore_seed_service.dart';
 /// 인증 통합 진입점
 ///
 /// - [DevAuthConfig.isMockAuthEnabled] == true → Mock UID (카카오 SDK 미호출)
-/// - false → 실제 [KakaoAuthService] / `loginWithKakaoTalk`
+/// - false → 실제 [KakaoAuthService] → Custom Token → Firestore users upsert
 class AuthIntegrationService {
   AuthIntegrationService({
     KakaoAuthService? kakaoAuth,
@@ -26,11 +26,13 @@ class AuthIntegrationService {
     UserFirestoreService? userFirestore,
     MockFirestoreSeedService? seedService,
     fb_auth.FirebaseAuth? firebaseAuth,
+    ApiService? api,
   })  : _kakao = kakaoAuth ?? KakaoAuthService.instance,
         _mock = mockAuth ?? MockAuthService.instance,
         _users = userFirestore ?? UserFirestoreService(),
         _seed = seedService ?? MockFirestoreSeedService.instance,
-        _auth = firebaseAuth ?? fb_auth.FirebaseAuth.instance;
+        _auth = firebaseAuth ?? fb_auth.FirebaseAuth.instance,
+        _api = api ?? ApiService.instance;
 
   static final AuthIntegrationService instance = AuthIntegrationService();
 
@@ -39,6 +41,7 @@ class AuthIntegrationService {
   final UserFirestoreService _users;
   final MockFirestoreSeedService _seed;
   final fb_auth.FirebaseAuth _auth;
+  final ApiService _api;
 
   /// 플래그에 따라 Mock 또는 카카오 로그인
   Future<AuthSessionResult> signIn({
@@ -52,9 +55,6 @@ class AuthIntegrationService {
   }
 
   /// 개발용 Mock UID 로그인.
-  ///
-  /// Anonymous Auth 가 콘솔에서 꺼져 있어도(CONFIGURATION_NOT_FOUND)
-  /// 로컬 세션은 반드시 성공한다. Firestore/FCM 은 best-effort.
   Future<AuthSessionResult> signInWithMock({
     MockAuthPersona persona = MockAuthPersona.owner,
   }) async {
@@ -66,7 +66,6 @@ class AuthIntegrationService {
     var userModel = _mock.toUserModel(profile);
     var firebaseUid = profile.uid;
 
-    // 1) Firebase Anonymous (선택) — 미설정이어도 Mock 로그인 계속
     try {
       final credentialUser = await _ensureFirebaseAuthUser();
       firebaseUid = credentialUser.uid;
@@ -85,7 +84,6 @@ class AuthIntegrationService {
       debugPrint('$st');
     }
 
-    // 2) Firestore users upsert + 시드 (실패해도 로그인 유지)
     try {
       userModel = await _users.upsert(userModel, mergeKakao: true);
       debugPrint(
@@ -103,7 +101,6 @@ class AuthIntegrationService {
       debugPrint('$st');
     }
 
-    // 3) FCM 토큰 바인딩 (선택)
     try {
       await FcmService.instance.bindUser(profile.uid);
     } catch (e, st) {
@@ -124,53 +121,29 @@ class AuthIntegrationService {
     );
   }
 
-  /// 실제 카카오 로그인 → Firebase 익명 세션 → Firestore `users` upsert
+  /// 카카오 → Custom Token → Firebase Auth → Firestore users 생성/병합
   Future<AuthSessionResult> signInWithKakao({
     MemberRole defaultRole = MemberRole.parttime,
   }) async {
     debugPrint('[AuthIntegration] Kakao sign-in start');
 
     if (!KakaoConfig.isConfigured) {
-      final err = StateError(
-        '카카오 네이티브 앱 키가 설정되지 않았습니다. '
-        'KakaoConfig / kakao.properties / Kakao-Keys.xcconfig 를 확인하세요.',
+      throw const AuthFlowException(
+        '카카오 네이티브 앱 키가 설정되지 않았습니다.',
+        code: 'kakao_not_configured',
       );
-      debugPrint('[AuthIntegration] FAIL: $err');
-      throw err;
     }
 
-    late final KakaoAuthResult kakao;
-    try {
-      kakao = await _kakao.signIn();
-      debugPrint(
-        '[AuthIntegration] Kakao OK id=${kakao.userId} '
-        'nickname=${kakao.nickname} email=${kakao.email}',
-      );
-    } on KakaoAuthException catch (e, st) {
-      debugPrint(
-        '[AuthIntegration] KakaoAuthException error=${e.error} '
-        'desc=${e.errorDescription}',
-      );
-      debugPrint('$st');
-      rethrow;
-    } on KakaoClientException catch (e, st) {
-      debugPrint(
-        '[AuthIntegration] KakaoClientException reason=${e.reason} '
-        'msg=${e.msg}',
-      );
-      debugPrint('$st');
-      rethrow;
-    } catch (e, st) {
-      debugPrint('[AuthIntegration] Kakao FAIL: $e');
-      debugPrint('$st');
-      rethrow;
-    }
+    final kakao = await _kakao.signIn();
+    debugPrint(
+      '[AuthIntegration] Kakao OK id=${kakao.userId} '
+      'nickname=${kakao.nickname} email=${kakao.email}',
+    );
 
-    // Firebase Auth: 커스텀 토큰(권장) → 익명(폴백) → 로컬만(최후)
-    final firebaseUid = await _ensureFirebaseAuthForKakao(kakao);
+    final firebaseUid = await _signInFirebaseWithCustomToken(kakao);
     final kakaoUid = kakao.userId;
 
-    var draft = UserModel(
+    final draft = UserModel(
       uid: kakaoUid,
       email: kakao.email ?? '',
       displayName: kakao.nickname,
@@ -184,154 +157,158 @@ class AuthIntegrationService {
       ownedRoomCount: 0,
     );
 
+    late final UserModel saved;
     try {
-      final existing = await _users.getById(kakaoUid);
-      draft = UserModel(
-        uid: kakaoUid,
-        email: kakao.email ?? existing?.email ?? '',
-        displayName: kakao.nickname,
-        realName: existing?.realName,
-        kakaoId: kakaoUid,
-        profileImageUrl: kakao.profileImageUrl,
-        role: existing?.role ?? defaultRole,
-        authProvider: 'kakao',
-        fcmToken: existing?.fcmToken,
-        fcmTokens: existing?.fcmTokens ?? const [],
-        ownedRoomCount: existing?.ownedRoomCount ?? 0,
-      );
-
-      final saved = await _users.upsert(draft, mergeKakao: true);
+      saved = await _users.upsertKakaoProfile(draft);
       debugPrint(
         '[AuthIntegration] Firestore users upsert OK path=${saved.docPath} '
         'kakaoUid=$kakaoUid hasRealName=${saved.hasRealName}',
       );
-      try {
-        await FcmService.instance.bindUser(saved.uid);
-      } catch (e, st) {
-        debugPrint('[AuthIntegration] FCM bind skip: $e');
-        debugPrint('$st');
-      }
-
-      return AuthSessionResult(
-        kakao: kakao,
-        user: saved,
-        firebaseUid: firebaseUid,
-        mockUser: MockUser(
-          uid: saved.uid,
-          displayName: saved.preferredDisplayName,
-          email: saved.email.isNotEmpty
-              ? saved.email
-              : 'kakao_$kakaoUid@kakao.local',
-          personaLabel: '카카오',
-          realName: saved.realName,
-        ),
-        usedMockAuth: false,
-      );
     } on FirebaseException catch (e, st) {
-      // 규칙/권한 문제여도 카카오 로컬 세션은 유지 (앱 진입 가능)
       debugPrint(
-        '[AuthIntegration] Firestore upsert soft-fail code=${e.code} '
+        '[AuthIntegration] Firestore upsert FAIL code=${e.code} '
         'message=${e.message}',
       );
       debugPrint('$st');
-      return AuthSessionResult(
-        kakao: kakao,
-        user: draft,
-        firebaseUid: firebaseUid,
-        mockUser: MockUser(
-          uid: draft.uid,
-          displayName: draft.preferredDisplayName,
-          email: draft.email.isNotEmpty
-              ? draft.email
-              : 'kakao_$kakaoUid@kakao.local',
-          personaLabel: '카카오',
-          realName: draft.realName,
-        ),
-        usedMockAuth: false,
+      throw AuthFlowException(
+        _firestoreUserMessage(e),
+        code: 'firestore_${e.code}',
       );
     } catch (e, st) {
-      debugPrint('[AuthIntegration] upsert soft-fail: $e');
+      debugPrint('[AuthIntegration] upsert FAIL: $e');
       debugPrint('$st');
-      return AuthSessionResult(
-        kakao: kakao,
-        user: draft,
-        firebaseUid: firebaseUid,
-        mockUser: MockUser(
-          uid: draft.uid,
-          displayName: draft.preferredDisplayName,
-          email: draft.email.isNotEmpty
-              ? draft.email
-              : 'kakao_$kakaoUid@kakao.local',
-          personaLabel: '카카오',
-          realName: draft.realName,
-        ),
-        usedMockAuth: false,
+      throw const AuthFlowException(
+        '사용자 정보를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        code: 'firestore_upsert_failed',
+      );
+    }
+
+    try {
+      await FcmService.instance.bindUser(saved.uid);
+    } catch (e, st) {
+      debugPrint('[AuthIntegration] FCM bind skip: $e');
+      debugPrint('$st');
+    }
+
+    return AuthSessionResult(
+      kakao: kakao,
+      user: saved,
+      firebaseUid: firebaseUid,
+      mockUser: MockUser(
+        uid: saved.uid,
+        displayName: saved.preferredDisplayName,
+        email: saved.email.isNotEmpty
+            ? saved.email
+            : 'kakao_$kakaoUid@kakao.local',
+        personaLabel: '카카오',
+        realName: saved.realName,
+      ),
+      usedMockAuth: false,
+    );
+  }
+
+  /// Vercel Custom Token 교환 + FirebaseAuth.signInWithCustomToken
+  Future<String> _signInFirebaseWithCustomToken(KakaoAuthResult kakao) async {
+    final current = _auth.currentUser;
+    if (current != null && current.uid == kakao.userId) {
+      debugPrint('[AuthIntegration] FirebaseAuth reuse uid=${current.uid}');
+      return current.uid;
+    }
+
+    // 다른 UID(익명 등) 세션이 있으면 제거 후 커스텀 토큰 로그인
+    if (current != null && current.uid != kakao.userId) {
+      try {
+        await _auth.signOut();
+      } catch (e) {
+        debugPrint('[AuthIntegration] prior signOut soft-fail: $e');
+      }
+    }
+
+    final exchanged = await _api.exchangeKakaoForFirebaseToken(
+      kakaoAccessToken: kakao.accessToken,
+      kakaoUserId: kakao.userId,
+    );
+
+    if (!exchanged.ok ||
+        exchanged.customToken == null ||
+        exchanged.customToken!.isEmpty) {
+      debugPrint(
+        '[AuthIntegration] customToken API FAIL '
+        'status=${exchanged.statusCode} code=${exchanged.errorCode} '
+        'msg=${exchanged.message}',
+      );
+      throw AuthFlowException(
+        exchanged.message.isNotEmpty
+            ? exchanged.message
+            : '로그인 서버와 토큰 교환에 실패했습니다.',
+        code: exchanged.errorCode ?? 'custom_token_exchange_failed',
+        network: exchanged.network,
+      );
+    }
+
+    try {
+      final cred =
+          await _auth.signInWithCustomToken(exchanged.customToken!);
+      final user = cred.user;
+      if (user == null) {
+        throw const AuthFlowException(
+          'Firebase 인증에 실패했습니다. (세션 없음)',
+          code: 'firebase_user_null',
+        );
+      }
+      if (user.uid != kakao.userId) {
+        debugPrint(
+          '[AuthIntegration] WARN uid mismatch '
+          'firebase=${user.uid} kakao=${kakao.userId}',
+        );
+      }
+      debugPrint(
+        '[AuthIntegration] FirebaseAuth customToken OK uid=${user.uid}',
+      );
+      return user.uid;
+    } on fb_auth.FirebaseAuthException catch (e, st) {
+      debugPrint(
+        '[AuthIntegration] signInWithCustomToken FAIL '
+        'code=${e.code} message=${e.message}',
+      );
+      debugPrint('$st');
+      throw AuthFlowException(
+        _firebaseAuthUserMessage(e),
+        code: 'firebase_${e.code}',
       );
     }
   }
 
-  /// 1) API 커스텀 토큰  2) 익명(가능 시)  3) 카카오 UID 로컬 폴백
-  Future<String> _ensureFirebaseAuthForKakao(KakaoAuthResult kakao) async {
-    // 이미 동일 UID 로 로그인돼 있으면 재사용
-    final current = _auth.currentUser;
-    if (current != null && current.uid == kakao.userId) {
-      debugPrint(
-        '[AuthIntegration] FirebaseAuth reuse uid=${current.uid}',
-      );
-      return current.uid;
+  static String _firebaseAuthUserMessage(fb_auth.FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-custom-token':
+      case 'custom-token-mismatch':
+        return '인증 토큰이 올바르지 않습니다. 다시 로그인해 주세요.';
+      case 'network-request-failed':
+        return '네트워크 오류로 Firebase 인증에 실패했습니다.';
+      case 'user-disabled':
+        return '비활성화된 계정입니다.';
+      case 'too-many-requests':
+        return '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.';
+      default:
+        return e.message?.isNotEmpty == true
+            ? e.message!
+            : 'Firebase 인증에 실패했습니다. (${e.code})';
     }
+  }
 
-    // 1) 서버 커스텀 토큰 (Anonymous 비활성 환경 대응)
-    try {
-      final exchanged = await ApiService.instance.exchangeKakaoForFirebaseToken(
-        kakaoAccessToken: kakao.accessToken,
-        kakaoUserId: kakao.userId,
-      );
-      if (exchanged.ok &&
-          exchanged.customToken != null &&
-          exchanged.customToken!.isNotEmpty) {
-        final cred = await _auth.signInWithCustomToken(exchanged.customToken!);
-        final user = cred.user;
-        if (user != null) {
-          debugPrint(
-            '[AuthIntegration] FirebaseAuth customToken OK '
-            'uid=${user.uid}',
-          );
-          return user.uid;
-        }
-      } else {
-        debugPrint(
-          '[AuthIntegration] customToken API skip: ${exchanged.message}',
-        );
-      }
-    } catch (e, st) {
-      debugPrint('[AuthIntegration] customToken path FAIL: $e');
-      debugPrint('$st');
+  static String _firestoreUserMessage(FirebaseException e) {
+    switch (e.code) {
+      case 'permission-denied':
+        return '사용자 정보 저장 권한이 없습니다. 로그인 후 다시 시도해 주세요.';
+      case 'unavailable':
+      case 'deadline-exceeded':
+        return '서버에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+      default:
+        return e.message?.isNotEmpty == true
+            ? e.message!
+            : '사용자 정보 저장에 실패했습니다. (${e.code})';
     }
-
-    // 2) 익명 (콘솔에서 켠 경우만)
-    try {
-      final anon = await _ensureFirebaseAuthUser();
-      debugPrint(
-        '[AuthIntegration] FirebaseAuth anonymous OK uid=${anon.uid}',
-      );
-      return anon.uid;
-    } on fb_auth.FirebaseAuthException catch (e, st) {
-      debugPrint(
-        '[AuthIntegration] anonymous skip code=${e.code} '
-        'message=${e.message}',
-      );
-      debugPrint('$st');
-    } catch (e, st) {
-      debugPrint('[AuthIntegration] anonymous skip: $e');
-      debugPrint('$st');
-    }
-
-    // 3) 로컬 폴백 — Firestore 규칙이 auth 필수가 아니면 앱 진입 가능
-    debugPrint(
-      '[AuthIntegration] FirebaseAuth local fallback uid=${kakao.userId}',
-    );
-    return kakao.userId;
   }
 
   Future<fb_auth.User> _ensureFirebaseAuthUser() async {

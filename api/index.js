@@ -16,18 +16,22 @@ const {
 
 const app = express();
 
-app.use(
-  cors({
-    origin: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-User-Id',
-      'X-Auth-Provider',
-    ],
-  }),
-);
+const corsOptions = {
+  origin: true, // 요청 Origin 반영 (앱·웹 모두)
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-User-Id',
+    'X-Auth-Provider',
+    'Accept',
+  ],
+  exposedHeaders: ['Retry-After'],
+  credentials: true,
+  maxAge: 86400,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 
 /** 전역 Rate Limit — 1분 60회 (헬스체크 제외) */
@@ -156,20 +160,28 @@ app.post(['/api/auth/kakao', '/auth/kakao'], (req, res) => {
           ok: true,
           customToken: result.customToken,
           uid: result.uid,
+          profile: result.profile || null,
         });
       } catch (e) {
         console.error('[auth/kakao]', e);
-        return res.status(500).json({
-          ok: false,
-          error: 'internal',
-          message: e.message || 'internal error',
-        });
+        if (!res.headersSent) {
+          return res.status(500).json({
+            ok: false,
+            error: 'internal',
+            message: e.message || 'internal error',
+          });
+        }
+        return undefined;
       }
     })(),
   ).catch((e) => {
     console.error('[auth/kakao] unhandled', e);
     if (!res.headersSent) {
-      res.status(500).json({ ok: false, error: 'internal' });
+      res.status(500).json({
+        ok: false,
+        error: 'internal',
+        message: '토큰 교환 중 오류가 발생했습니다.',
+      });
     }
   });
 });
