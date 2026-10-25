@@ -102,7 +102,7 @@ function targetRouteForType(type) {
       return '/employees';
     case 'assign':
     case 'schedule_assigned':
-      return '/schedule';
+      return '/assigned-schedule';
     case 'schedule_confirmed':
       return '/schedule';
     case 'request_update':
@@ -126,6 +126,10 @@ function targetRouteForType(type) {
     case 'attendance_clock_in':
     case 'attendance_clock_out':
       return '/commute-history';
+    case 'commute_correction':
+      return '/requests/commute-correction';
+    case 'commute_correction_result':
+      return '/commute-history';
     case 'absent':
     case 'schedule_absent':
       return '/my-attendance';
@@ -135,6 +139,26 @@ function targetRouteForType(type) {
     default:
       return '/notifications';
   }
+}
+
+/** users/{uid}.notificationCategories — false면 해당 타입 스킵 */
+function categoryEnabled(userData, type) {
+  const cats = (userData && userData.notificationCategories) || {};
+  const t = String(type || '');
+  if (
+    t === 'commute' ||
+    t === 'attendance_clock_in' ||
+    t === 'attendance_clock_out' ||
+    t === 'commute_correction' ||
+    t === 'commute_correction_result'
+  ) {
+    return cats.commute !== false;
+  }
+  if (t === 'notice' || t === 'store_notice') {
+    return cats.notice !== false;
+  }
+  // 근무·배정·대타·변경 등
+  return cats.schedule !== false;
 }
 
 function buildDeepLinkFields(type, data = {}) {
@@ -241,6 +265,13 @@ async function sendToUser({
   if (dedupeKey) {
     const ok = await claimDedupe(`${recipientUid}:${type}:${dedupeKey}`);
     if (!ok) return { ok: false, reason: 'deduped' };
+  }
+
+  const userSnap = await db.collection('users').doc(String(recipientUid)).get();
+  const userData = userSnap.exists ? userSnap.data() || {} : {};
+  if (!categoryEnabled(userData, type)) {
+    logger.info('sendToUser skip preference', { recipientUid, type });
+    return { ok: false, reason: 'preference_off' };
   }
 
   const token = await resolveFcmToken(recipientUid);
@@ -822,13 +853,20 @@ exports.onAttendanceUpdated = onDocumentUpdated(
   },
 );
 
-// attendance_logs (레거시 단건 로그) — attendances 와 동일 키로 중복 차단
+// attendance_logs — 클라이언트가 AppNotificationDispatcher 로 이미 알림 발송.
+// 동기화용 문서만 두고 푸시/인박스는 중복 방지를 위해 스킵.
 exports.onAttendanceLogCreated = onDocumentCreated(
   'attendance_logs/{logId}',
   async (event) => {
     const snap = event.data;
     if (!snap) return;
     const data = snap.data() || {};
+    if (data.clientNotified === true) {
+      logger.info('attendance_logs skip — clientAlreadyNotified', {
+        logId: event.params.logId,
+      });
+      return;
+    }
     const storeId = data.roomId || data.storeId || '';
     const userId = data.userId || '';
     const type = data.type || '';

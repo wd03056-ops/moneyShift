@@ -131,24 +131,35 @@ class MonthPayrollAggregator {
     final wantOt = contract.isOvertimePayEnabled;
     final wantNight = contract.isNightPayEnabled;
 
-    final todayKey = _dayFmt.format(now);
+    // UI 기간(M.1 ~ 오늘)과 동일: 해당 월 1일 ~ 오늘(KST)까지
+    final todayKey = _dayFmt.format(DateTime(now.year, now.month, now.day));
     final monthPrefix =
         '${y.toString().padLeft(4, '0')}-${m.toString().padLeft(2, '0')}';
+    final monthStartKey = '$monthPrefix-01';
+    final isCurrentMonth = now.year == y && now.month == m;
+    final periodEndKey = isCurrentMonth
+        ? todayKey
+        : '$monthPrefix-${DateTime(y, m + 1, 0).day.toString().padLeft(2, '0')}';
 
     // dateKey → 그날 실근무(기본+OT, 주휴 제외)
-    // SSOT: MockStore.actualPayEstimateOnDate (퇴근 시각 기준과 동일)
+    // SSOT: MockStore.attendanceLogs → actualPayEstimateOnDate
+    // (실 출퇴근 구간 × 계약 시급·휴게·연장·야간. 주휴는 아래에서 주 합산)
     final actualByDay = <String, _DayPay>{};
     final clockOutDates = <String>{};
     for (final a in store.attendanceForUser(roomId, userId)) {
       if (a.type != AttendanceType.clockOut) continue;
-      final d = a.timestamp;
-      if (d.year != y || d.month != m) continue;
-      clockOutDates.add(_dayFmt.format(DateTime(d.year, d.month, d.day)));
+      // 기록은 KstDateTime.now() 벽시계로 저장 — 달력일 기준 버킷
+      final d = KstDateTime.dateOnly(a.timestamp);
+      final key = _dayFmt.format(d);
+      if (key.compareTo(monthStartKey) < 0) continue;
+      if (key.compareTo(periodEndKey) > 0) continue;
+      clockOutDates.add(key);
     }
 
     for (final key in clockOutDates) {
       final day = DateTime.parse(key);
       final e = store.actualPayEstimateOnDate(roomId, userId, day);
+      // 당일 배정 없거나 실근로 0분이면 제외 (배정 확인 후에만 급여 산정)
       if (e == null || e.netWorkedMinutes <= 0) continue;
       actualByDay[key] = _DayPay(
         base: e.basePay,

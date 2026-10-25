@@ -175,10 +175,17 @@ service cloud.firestore {
     }
 
     match /attendance_logs/{logId} {
-      allow read: if isRoomMember(resource.data.roomId);
+      allow read: if isRoomMember(resource.data.roomId)
+        || isDevTestId(resource.data.roomId)
+        || isDevTestId(resource.data.userId);
+      // Mock·테스트 UID 는 auth.uid 와 문서 userId 가 다를 수 있음
       allow create: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid
-        && isRoomMember(request.resource.data.roomId);
+        && (
+          (request.resource.data.userId == request.auth.uid
+            && isRoomMember(request.resource.data.roomId))
+          || isDevTestId(request.resource.data.userId)
+          || isDevTestId(request.resource.data.roomId)
+        );
       allow update, delete: if false;
     }
 

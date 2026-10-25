@@ -9,6 +9,7 @@ import '../../../../core/permissions/location_disclosure.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/time/kst_date_time.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/outlined_toggle.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
 import '../../../../core/widgets/sticky_action_button.dart';
 import '../../../../mock/mock_store.dart';
@@ -340,6 +341,11 @@ class _StaffAttendanceTabState extends State<StaffAttendanceTab> {
                 summary: monthPaySummary,
                 currency: currency,
                 roomId: liveRoom.id,
+              ),
+              const SizedBox(height: 12),
+              _GpsBypassTestCard(
+                enabled: store.gpsBypassEnabled,
+                onChanged: store.setGpsBypassEnabled,
               ),
               const SizedBox(height: 20),
               _TodayWorkCard(
@@ -997,6 +1003,53 @@ class _IncomingSwapCardState extends State<_IncomingSwapCard> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 반경·GPS 없이 출퇴근 테스트 (매장 위치 미설정·에뮬레이터용)
+class _GpsBypassTestCard extends StatelessWidget {
+  const _GpsBypassTestCard({
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '위치 없이 출퇴근 (테스트)',
+                  style: textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  enabled
+                      ? 'GPS·반경 검증을 건너뜁니다'
+                      : '매장 위치·GPS 없이 출퇴근을 시험할 때 켜세요',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedToggle(value: enabled, onChanged: onChanged),
         ],
       ),
     );

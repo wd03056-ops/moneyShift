@@ -2,11 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../../core/config/dev_auth_config.dart';
 import '../../../core/navigation/notification_deep_link.dart';
 import '../../../core/time/kst_date_time.dart';
+import '../../../mock/mock_session.dart';
 import '../../../models/enums/notification_type.dart';
 import '../../../models/notification_model.dart';
+import '../../../services/local_notification_service.dart';
 import '../../../services/notification_service.dart';
 import '../data/mock_notification_repository.dart';
 import '../data/notification_preference_store.dart';
@@ -16,10 +17,9 @@ import 'notification_templates.dart';
 
 /// MockStore / UI 플로우에서 알림 발송
 ///
-/// Mock 모드: **수신자(`targetUserId`)별** [MockNotificationRepository]에 즉시 저장
-/// (계정 전환 시 알림함·배지가 바로 보임)
-///
-/// 실서비스: Firestore + FCM job ([NotificationService])
+/// 1) Mock 인박스 (수신자 UID별, 계정 전환 즉시 반영)
+/// 2) 현재 계정이 수신자면 로컬 알림 배너
+/// 3) Firestore 인박스 + `notification_jobs` → FCM
 abstract final class AppNotificationDispatcher {
   AppNotificationDispatcher._();
 
@@ -66,10 +66,9 @@ abstract final class AppNotificationDispatcher {
       storeId: storeId,
       workerUid: workerUid,
     );
-    if (NotificationDedupe.shouldSkip(idKey) ||
-        NotificationDedupe.shouldSkip(burstKey)) {
-      return;
-    }
+    // id·burst 를 각각 검사 — || 단락 평가로 burst 키가 잘못 마킹되지 않게
+    if (NotificationDedupe.shouldSkip(idKey)) return;
+    if (NotificationDedupe.shouldSkip(burstKey)) return;
     _deliver(
       targetUserIds: [workerUid],
       type: NotificationType.assign,
@@ -464,10 +463,11 @@ abstract final class AppNotificationDispatcher {
     );
   }
 
-  /// 수신자별로 Mock 저장 + (실서비스) Firestore/FCM
+  /// 수신자별로 Mock 저장 + Firestore/FCM + (현재 계정일 때) 로컬 배너
   ///
-  /// [NotificationPreferenceStore.isNotificationEnabled] 가 false 이면
-  /// 해당 수신자는 스킵 (근무 배정·결근 등 긴급 타입은 예외).
+  /// 카테고리 토글 OFF 수신자는 스킵.
+  /// 내용 중복 차단은 [MockNotificationRepository] / [NotificationService] 한 곳에서만
+  /// (여기서 미리 shouldSkipContent 하면 인박스 적재가 영원히 스킵되던 버그 방지).
   static void _deliver({
     required Iterable<String> targetUserIds,
     required NotificationType type,
@@ -487,86 +487,82 @@ abstract final class AppNotificationDispatcher {
       return;
     }
 
-    final prefs = NotificationPreferenceStore.instance;
-    final typeKey = type.firestoreValue;
-    final requested = targetUserIds.where((e) => e.isNotEmpty).toSet();
-    final targets = requested
-        .where(
-          (uid) => prefs.shouldDeliver(userId: uid, type: typeKey),
-        )
-        .toSet();
-    final blocked = requested.difference(targets);
+    _run(() async {
+      final prefs = NotificationPreferenceStore.instance;
+      await prefs.ensureLoaded();
+      final typeKey = type.firestoreValue;
+      final requested = targetUserIds.where((e) => e.isNotEmpty).toSet();
+      final targets = requested
+          .where(
+            (uid) => prefs.shouldDeliver(userId: uid, type: typeKey),
+          )
+          .toSet();
+      final blocked = requested.difference(targets);
 
-    if (blocked.isNotEmpty) {
-      debugPrint(
-        '[AppNotif] preference block type=$typeKey '
-        'blocked=${blocked.length} allowed=${targets.length}',
+      if (blocked.isNotEmpty) {
+        debugPrint(
+          '[AppNotif] preference block type=$typeKey '
+          'blocked=${blocked.length} allowed=${targets.length}',
+        );
+      }
+
+      if (targets.isEmpty) {
+        debugPrint(
+          '[AppNotif] skip — no enabled targets type=$typeKey '
+          '(opted-out or empty)',
+        );
+        return;
+      }
+
+      final safeTitle = NotificationSanitizer.sanitizeTitle(title);
+      final safeBody = NotificationSanitizer.sanitizeBody(body);
+      final safeStoreId =
+          NotificationSanitizer.sanitize(storeId, maxLength: 64);
+
+      final link = NotificationDeepLink.fromType(
+        type: type,
+        storeId: safeStoreId,
+        data: data,
       );
-    }
-
-    if (targets.isEmpty) {
-      debugPrint(
-        '[AppNotif] skip — no enabled targets type=$typeKey '
-        '(opted-out or empty)',
+      final template = NotificationModel.withDeepLink(
+        id: '',
+        userId: '',
+        storeId: safeStoreId,
+        type: type,
+        title: safeTitle,
+        body: safeBody,
+        isRead: false,
+        createdAt: DateTime.now(),
+        data: data,
+        targetRoute: link.targetRoute,
+        params: link.params,
       );
-      return;
-    }
 
-    final safeTitle = NotificationSanitizer.sanitizeTitle(title);
-    final safeBody = NotificationSanitizer.sanitizeBody(body);
-    final safeStoreId = NotificationSanitizer.sanitize(storeId, maxLength: 64);
+      // 1) Mock 인박스 — 계정 전환·배지용 (내용 중복은 repo 내부에서만 차단)
+      _mock.addNotificationToMany(targets, template);
 
-    // 1) Mock: 수신자별 저장소에 즉시 적재 (계정 전환 핵심)
-    //    동일 문구 짧은 시간 중복 적재는 수신자별로 스킵
-    final mockTargets = <String>{};
-    for (final uid in targets) {
-      if (NotificationDedupe.shouldSkipContent(
-        userId: uid,
-        type: typeKey,
+      // 2) 현재 로그인 수신자면 로컬 배너 (포그라운드·Mock에서도 체감)
+      final currentUid = MockSession.instance.currentUser?.uid;
+      if (currentUid != null && targets.contains(currentUid)) {
+        await LocalNotificationService.instance.show(
+          title: safeTitle,
+          body: safeBody,
+          type: type,
+          storeId: safeStoreId,
+          data: data,
+        );
+      }
+
+      // 3) Firestore 인박스 + FCM job (릴리즈·Mock 공통 — 토큰 있으면 푸시)
+      await _svc.notifyMany(
+        recipientUids: targets,
+        kind: kind,
         title: safeTitle,
         body: safeBody,
         storeId: safeStoreId,
-      )) {
-        debugPrint('[AppNotif] mock skip content-dup uid=$uid');
-        continue;
-      }
-      mockTargets.add(uid);
-    }
-    final link = NotificationDeepLink.fromType(
-      type: type,
-      storeId: safeStoreId,
-      data: data,
-    );
-    final template = NotificationModel.withDeepLink(
-      id: '',
-      userId: '',
-      storeId: safeStoreId,
-      type: type,
-      title: safeTitle,
-      body: safeBody,
-      isRead: false,
-      createdAt: DateTime.now(),
-      data: data,
-      targetRoute: link.targetRoute,
-      params: link.params,
-    );
-    if (mockTargets.isNotEmpty) {
-      _mock.addNotificationToMany(mockTargets, template);
-    }
-
-    // 2) 실서비스: Firestore + FCM
-    if (!DevAuthConfig.isMockAuthEnabled) {
-      _run(
-        () => _svc.notifyMany(
-          recipientUids: targets,
-          kind: kind,
-          title: safeTitle,
-          body: safeBody,
-          storeId: safeStoreId,
-          data: data,
-        ),
+        data: data,
       );
-    }
+    });
   }
 
   static void _run(Future<void> Function() fn) {

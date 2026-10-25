@@ -2494,10 +2494,17 @@ class MockStore extends ChangeNotifier {
   void _persistAttendanceLog(AttendanceLogModel log) {
     if (Firebase.apps.isEmpty) return;
     try {
+      // clientNotified: CF onAttendanceLogCreated 가 푸시를 중복 보내지 않도록
       FirebaseFirestore.instance
           .collection(FirestorePaths.attendanceLogs)
           .doc(log.id)
-          .set(log.toFirestore(forCreate: true), SetOptions(merge: true))
+          .set(
+            {
+              ...log.toFirestore(forCreate: true),
+              'clientNotified': true,
+            },
+            SetOptions(merge: true),
+          )
           .then((_) {
         debugPrint('[MockStore] attendance_logs sync ok ${log.id}');
       }).catchError((Object e) {
