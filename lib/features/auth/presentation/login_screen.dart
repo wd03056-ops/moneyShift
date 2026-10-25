@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 
 import '../../../core/config/dev_auth_config.dart';
@@ -21,6 +24,8 @@ import '../data/mock_auth_service.dart';
 import 'widgets/kakao_login_button.dart';
 
 /// 카카오 로그인(실연동) + 개발용 테스트 로그인
+///
+/// 릴리즈(Play 심사)용: 안내 문구 2초 내 5연타 → 심사용 Mock 로그인 다이얼로그
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -29,8 +34,13 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const int _hiddenTapTarget = 5;
+  static const Duration _hiddenTapWindow = Duration(seconds: 2);
+
   bool _kakaoLoading = false;
   bool _mockLoading = false;
+  int _hiddenTapCount = 0;
+  Timer? _hiddenTapResetTimer;
 
   bool get _busy => _kakaoLoading || _mockLoading;
 
@@ -42,8 +52,72 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _hiddenTapResetTimer?.cancel();
     MockSession.instance.removeListener(_onSessionChanged);
     super.dispose();
+  }
+
+  /// Play 심사용 히든 트리거 — 2초 이내 5연타
+  void _onHiddenSubtitleTap() {
+    if (_busy) return;
+
+    _hiddenTapResetTimer?.cancel();
+    _hiddenTapCount += 1;
+
+    if (_hiddenTapCount >= _hiddenTapTarget) {
+      _hiddenTapCount = 0;
+      HapticFeedback.mediumImpact();
+      unawaited(_showReviewerTestLoginDialog());
+      return;
+    }
+
+    _hiddenTapResetTimer = Timer(_hiddenTapWindow, () {
+      _hiddenTapCount = 0;
+    });
+  }
+
+  Future<void> _showReviewerTestLoginDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('테스트 계정 로그인'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('구글 심사용 테스트 계정으로 로그인하시겠습니까?'),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: _busy
+                    ? null
+                    : () {
+                        Navigator.of(ctx).pop();
+                        unawaited(_loginWithMock(MockAuthPersona.owner));
+                      },
+                child: const Text('사장님 테스트 계정 로그인'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _busy
+                    ? null
+                    : () {
+                        Navigator.of(ctx).pop();
+                        unawaited(_loginWithMock(MockAuthPersona.staff));
+                      },
+                child: const Text('직원 테스트 계정 로그인'),
+              ),
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('취소'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// 로그인 성공 시 push 된 로그인 라우트를 닫아 AuthHomeGate(메인/온보딩)가 보이게 함
@@ -80,10 +154,11 @@ class _LoginScreenState extends State<LoginScreen> {
         firebaseUid: result.firebaseUid,
       );
       MockSession.instance.loginAs(result.mockUser);
+      // AuthHomeGate 가 사장/직원 메인으로 전환 (로그인 라우트 pop)
       _showMessage(
         result.needsProfileSetup
             ? '실명 등록이 필요합니다'
-            : '${result.user.preferredDisplayName}님 (Mock) 로그인',
+            : '${result.user.preferredDisplayName}님 테스트 로그인',
       );
     } catch (e, st) {
       debugPrint('[LoginScreen] Mock login FAIL: $e');
@@ -262,10 +337,17 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              '카카오 계정으로 간편하게 시작하세요',
-              style: textTheme.bodyMedium?.copyWith(
-                color: AppColors.textSecondary,
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _onHiddenSubtitleTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  '카카오 계정으로 간편하게 시작하세요',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 8),

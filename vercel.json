@@ -8,6 +8,10 @@
     {
       "src": "terms/index.html",
       "use": "@vercel/static"
+    },
+    {
+      "src": "delete-account/index.html",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -21,6 +25,10 @@
     {
       "src": "^/terms/?$",
       "dest": "/terms/index.html"
+    },
+    {
+      "src": "^/delete-account/?$",
+      "dest": "/delete-account/index.html"
     },
     {
       "src": "/(.*)",

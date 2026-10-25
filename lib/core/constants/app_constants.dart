@@ -12,8 +12,8 @@ class AppConstants {
       '앱 버전 $appVersionName ($appVersionCode)';
 
 
-  /// Play Console·문의용 (배포 전 실제 연락처로 교체)
-  static const String supportEmail = 'support@moneyshift.app';
+  /// Play Console·문의용
+  static const String supportEmail = 'baekson777@gmail.com';
   static const String developerName = 'Money Shift';
 
   /// 호스팅된 개인정보처리방침·이용약관 (Play Console 제출용)
@@ -22,6 +22,10 @@ class AppConstants {
       'https://moneyshift-ten.vercel.app/privacy';
   static const String termsOfServiceUrl =
       'https://giddy-gaura-998.notion.site/Terms-Conditions-401ad28bec5c8067b331cf4858ed20ac';
+
+  /// 계정·데이터 삭제 요청 웹 페이지 (Play Console 계정 삭제 URL)
+  static const String accountDeletionUrl =
+      'https://moneyshift-ten.vercel.app/delete-account';
 
   /// 초대·앱링크 호스트 (웹 랜딩 + Android App Links / iOS Universal Links)
   static const String appLinkHost = 'moneyshift.app';

@@ -32,8 +32,8 @@
    만 14세 이상(또는 Play 등급 설문에 맞게). Designed for Families 해당 없음.
 
 4. **계정 삭제 URL(웹)**  
-   Console에 웹 삭제 안내 페이지가 필요하면,  
-   “앱 내 내정보 → 계정 삭제” + 문의 이메일을 안내하는 짧은 페이지를 게시합니다.
+   `https://moneyshift-ten.vercel.app/delete-account`  
+   (`AppConstants.accountDeletionUrl` · 문의 `baekson777@gmail.com`)
 
 5. **스토어 등록 정보**
    - 짧은/긴 설명, 스크린샷(폰), 아이콘 512, feature graphic 1024×500
@@ -54,8 +54,9 @@
 
 | 상수 | 파일 | 내용 |
 |------|------|------|
-| `supportEmail` | `lib/core/constants/app_constants.dart` | 실제 문의 메일 |
+| `supportEmail` | `lib/core/constants/app_constants.dart` | `baekson777@gmail.com` |
 | `privacyPolicyUrl` | 동일 | `https://moneyshift-ten.vercel.app/privacy` |
+| `accountDeletionUrl` | 동일 | `https://moneyshift-ten.vercel.app/delete-account` |
 | `termsOfServiceUrl` | 동일 | Notion 이용약관 URL |
 | `applicationId` | 이미 `com.money.money_shift` | 필요 시 확정 |
 | release signing | `android/app/build.gradle.kts` | debug 서명 제거 |
