@@ -44,8 +44,8 @@ android {
 
     defaultConfig {
         applicationId = "com.money.money_shift"
-        // Firebase Auth / Messaging 권장 하한
-        minSdk = maxOf(flutter.minSdkVersion, 23)
+        // Firebase Auth / Messaging · AdMob 권장 하한
+        minSdk = maxOf(flutter.minSdkVersion, 24)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

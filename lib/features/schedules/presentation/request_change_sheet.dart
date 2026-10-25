@@ -182,6 +182,13 @@ class _RequestChangeSheetState extends State<RequestChangeSheet> {
             ),
             TextField(
               controller: _reasonController,
+              autocorrect: false,
+              enableSuggestions: false,
+              spellCheckConfiguration:
+                  const SpellCheckConfiguration.disabled(),
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
+              style: const TextStyle(decoration: TextDecoration.none),
               decoration: const InputDecoration(
                 labelText: '수정 사유',
               ),

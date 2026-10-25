@@ -330,6 +330,13 @@ class _OwnerChangeRequestSheetState extends State<OwnerChangeRequestSheet> {
               controller: _reasonController,
               maxLines: 3,
               enabled: !_submitting,
+              autocorrect: false,
+              enableSuggestions: false,
+              spellCheckConfiguration:
+                  const SpellCheckConfiguration.disabled(),
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
+              style: const TextStyle(decoration: TextDecoration.none),
               decoration: const InputDecoration(
                 hintText: '예: 매장 자재 입고 시간 변경으로 1시간 늦게 출근 가능할까?',
                 border: OutlineInputBorder(),

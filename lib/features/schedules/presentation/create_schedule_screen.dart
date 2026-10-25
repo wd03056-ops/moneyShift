@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+import '../../../core/async/action_guard.dart';
 import '../../../core/calendar/korean_holidays.dart';
 import '../../../core/calendar/snappy_calendar.dart';
 import '../../../core/constants/app_constants.dart';
@@ -97,6 +98,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   bool _includeNightPay = false;
   bool _includeOvertimePay = false;
   bool _submitting = false;
+  final _submitGuard = ActionGuard(cooldown: Duration(milliseconds: 1000));
 
   /// 고정 휴게 선택지(분). 자동계산은 별도 항목.
   static const List<int> _breakOptions = [0, 15, 30, 45, 60, 90, 120];
@@ -111,6 +113,25 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
       _breakTimeType == BreakTimeType.auto && !_breakManuallySet;
 
   static DateTime _dateOnly(DateTime d) => DateOnly.of(d);
+
+  /// 신규 배정 가능 최소일 = 오늘(KST). 조회용 달력과 달리 과거는 비활성.
+  DateTime get _minAssignableDay => KstDateTime.today();
+
+  bool _isAssignableDay(DateTime day) =>
+      !_dateOnly(day).isBefore(_minAssignableDay);
+
+  static const String _pastAssignMessage =
+      '지나간 날짜에는 새 근무를 배정할 수 없습니다.';
+
+  void _showPastAssignBlocked() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(_pastAssignMessage),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   /// 한 번에 배정 가능한 최대 일수 (경계·성능 가드)
   static const int _maxAssignDays = 366;
@@ -133,13 +154,22 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   @override
   void initState() {
     super.initState();
-    final seedDay = widget.initialDate != null
+    final today = _minAssignableDay;
+    final requested = widget.initialDate != null
         ? _dateOnly(widget.initialDate!)
-        : _dateOnly(KstDateTime.now());
+        : null;
+    // 조회 달력에서 과거일을 고른 뒤 배정으로 들어오면 오늘로 보정
+    final seedDay = (requested != null && !requested.isBefore(today))
+        ? requested
+        : today;
     _focusedDay = seedDay;
-    if (widget.initialDate != null) {
+    if (requested != null && !requested.isBefore(today)) {
       _mode = _DatePickMode.individual;
       _selectedDates.add(seedDay);
+    } else if (requested != null && requested.isBefore(today)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showPastAssignBlocked();
+      });
     }
     final staff = MockStore.instance.activeStaffMembers(widget.room.id);
     final initial = widget.initialStaff;
@@ -235,7 +265,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   /// 포커스 월에서 해당 요일 날짜만 `_selectedDates`에 추가 (기존 선택 유지)
   void _addWeekdayInFocusedMonth(int weekday) {
     for (final d in _daysInFocusedMonth()) {
-      if (d.weekday == weekday) _addDate(d);
+      if (d.weekday == weekday && _isAssignableDay(d)) _addDate(d);
     }
   }
 
@@ -481,6 +511,10 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   /// 개별·매주 공통 — `_selectedDates` 토글 (기존 선택 유지)
   void _onDayToggled(DateTime selectedDay, DateTime focusedDay) {
     final day = _dateOnly(selectedDay);
+    if (!_isAssignableDay(day)) {
+      _showPastAssignBlocked();
+      return;
+    }
     setState(() {
       if (_focusedDay.year != focusedDay.year ||
           _focusedDay.month != focusedDay.month) {
@@ -501,6 +535,10 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   /// 4) 시작일보다 이전 탭 → 새 시작일
   void _onBookingRangeDaySelected(DateTime selectedDay, DateTime focusedDay) {
     final day = _dateOnly(selectedDay);
+    if (!_isAssignableDay(day)) {
+      _showPastAssignBlocked();
+      return;
+    }
     setState(() {
       if (_focusedDay.year != focusedDay.year ||
           _focusedDay.month != focusedDay.month) {
@@ -609,6 +647,11 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
       return;
     }
 
+    if (days.any((d) => !_isAssignableDay(d))) {
+      _showPastAssignBlocked();
+      return;
+    }
+
     if (days.length > _maxAssignDays) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -635,6 +678,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
       return;
     }
 
+    if (_submitting || !_submitGuard.tryStart()) return;
     setState(() => _submitting = true);
     try {
       final created = MockStore.instance.createSchedulesForDates(
@@ -667,9 +711,14 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
       Navigator.of(context).pop(created);
     } catch (e) {
       if (!mounted) return;
-      final message = e is DuplicateScheduleException
-          ? e.message
-          : '근무표 작성 실패: $e';
+      final String message;
+      if (e is PastDateAssignmentException) {
+        message = e.message;
+      } else if (e is DuplicateScheduleException) {
+        message = e.message;
+      } else {
+        message = '근무표 작성 실패: $e';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -677,6 +726,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
         ),
       );
     } finally {
+      _submitGuard.end();
       if (mounted) setState(() => _submitting = false);
     }
   }
@@ -697,6 +747,18 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: isRed ? AppColors.holiday : AppColors.textPrimary,
               fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+
+  Widget _disabledDayCell(BuildContext context, DateTime day) {
+    return Center(
+      child: Text(
+        '${day.day}',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: AppColors.textSecondary.withValues(alpha: 0.4),
+              fontWeight: FontWeight.w600,
             ),
       ),
     );
@@ -974,6 +1036,8 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                   availableCalendarFormats: const {
                     CalendarFormat.month: 'Month',
                   },
+                  // 신규 배정만 오늘 이전 비활성 (조회용 달력은 과거 선택 유지)
+                  enabledDayPredicate: _isAssignableDay,
                   pageAnimationEnabled: SnappyCalendar.pageAnimationEnabled,
                   pageAnimationDuration: SnappyCalendar.pageAnimationDuration,
                   formatAnimationDuration:
@@ -1036,6 +1100,8 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                         _plainDayCell(context, day),
                     holidayBuilder: (context, day, focused) =>
                         _plainDayCell(context, day, isHoliday: true),
+                    disabledBuilder: (context, day, focused) =>
+                        _disabledDayCell(context, day),
                     // 중간 일은 텍스트만 — 밴드는 rangeHighlightBuilder
                     withinRangeBuilder: (context, day, focused) =>
                         _plainDayCell(context, day),
@@ -1138,6 +1204,11 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                       decorationColor: AppColors.primary,
                       decorationThickness: 1.5,
                     ),
+                    disabledTextStyle: textTheme.labelSmall!.copyWith(
+                      color: AppColors.textSecondary.withValues(alpha: 0.45),
+                      fontWeight: FontWeight.w600,
+                    ),
+                    disabledDecoration: const BoxDecoration(),
                   ),
                 ),
               ),
@@ -1204,6 +1275,8 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                     enableSuggestions: false,
                     spellCheckConfiguration:
                         const SpellCheckConfiguration.disabled(),
+                    smartDashesType: SmartDashesType.disabled,
+                    smartQuotesType: SmartQuotesType.disabled,
                     inputFormatters: const [
                       _ThousandsSeparatorInputFormatter(),
                     ],

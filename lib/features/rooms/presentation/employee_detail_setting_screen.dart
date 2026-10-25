@@ -140,6 +140,13 @@ class _EmployeeDetailSettingScreenState
               controller: _wageCtrl,
               enabled: !_saving,
               keyboardType: TextInputType.number,
+              autocorrect: false,
+              enableSuggestions: false,
+              spellCheckConfiguration:
+                  const SpellCheckConfiguration.disabled(),
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
+              style: const TextStyle(decoration: TextDecoration.none),
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 _ThousandsSeparatorFormatter(),
@@ -149,7 +156,6 @@ class _EmployeeDetailSettingScreenState
                 border: const OutlineInputBorder(),
                 hintText: '${AppConstants.minimumHourlyWage}',
               ),
-              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 8),
             Align(

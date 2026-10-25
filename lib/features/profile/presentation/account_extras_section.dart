@@ -9,8 +9,7 @@ import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../mock/mock_user.dart';
 import '../../auth/data/account_deletion_service.dart';
-import '../../legal/legal_document_screen.dart';
-import '../../legal/legal_texts.dart';
+import '../../legal/legal_links.dart';
 import '../../notifications/presentation/notification_test_screen.dart';
 import 'edit_profile_screen.dart';
 
@@ -44,18 +43,6 @@ class AccountExtrasSection extends StatelessWidget {
     );
   }
 
-  void _openLegal(
-    BuildContext context, {
-    required String title,
-    required String body,
-  }) {
-    final slug = title.hashCode.toRadixString(16);
-    AppNavigation.pushSingleTop(
-      name: AppRouteNames.legal(slug),
-      builder: (_) => LegalDocumentScreen(title: title, body: body),
-    );
-  }
-
   Future<void> _confirmLogout(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -83,11 +70,8 @@ class AccountExtrasSection extends StatelessWidget {
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
-    try {
-      await AccountDeletionService.instance.logout();
-    } finally {
-      // pushAndRemoveUntil 로 로딩 dialog 도 함께 제거됨
-    }
+    // logout → popUntil(first) 가 로딩 다이얼로그·방 스택을 함께 제거
+    await AccountDeletionService.instance.logout();
   }
 
   Future<void> _confirmDeleteAccount(BuildContext context) async {
@@ -96,9 +80,9 @@ class AccountExtrasSection extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        title: const Text('계정 삭제'),
+        title: const Text('회원탈퇴'),
         content: const Text(
-          '계정을 삭제하면 소셜 로그인 연동이 해제되고, '
+          '회원탈퇴 시 소셜 로그인 연동이 해제되고, '
           '프로필·푸시 토큰 등 개인정보가 파기됩니다.\n\n'
           '매장의 근무·급여 기록은 \'(탈퇴한 회원)\'으로 남으며 '
           '복구할 수 없습니다.\n\n계속하시겠습니까?',
@@ -111,7 +95,7 @@ class AccountExtrasSection extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              '삭제',
+              '탈퇴',
               style: TextStyle(color: AppColors.holiday),
             ),
           ),
@@ -144,7 +128,7 @@ class AccountExtrasSection extends StatelessWidget {
         Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('계정 삭제 실패: $e'),
+            content: Text('회원탈퇴 실패: $e'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.holiday,
           ),
@@ -169,7 +153,7 @@ class AccountExtrasSection extends StatelessWidget {
             horizontalTitleGap: 12,
             leading: const Icon(
               Icons.edit_outlined,
-              color: AppColors.primary,
+              color: AppColors.textPrimary,
             ),
             title: Text(
               '프로필 수정',
@@ -201,7 +185,7 @@ class AccountExtrasSection extends StatelessWidget {
             horizontalTitleGap: 12,
             leading: const Icon(
               Icons.bug_report_outlined,
-              color: AppColors.primary,
+              color: AppColors.textPrimary,
             ),
             title: Text(
               '알림 테스트',
@@ -276,35 +260,6 @@ class AccountExtrasSection extends StatelessWidget {
             },
           ),
         ],
-        if (showLogoutDelete) ...[
-          const SizedBox(height: 12),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            minLeadingWidth: 24,
-            horizontalTitleGap: 12,
-            title: Text(
-              '로그아웃',
-              style: textTheme.bodyLarge?.copyWith(
-                color: AppColors.holiday,
-              ),
-            ),
-            onTap: () => _confirmLogout(context),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            minLeadingWidth: 24,
-            horizontalTitleGap: 12,
-            title: Text(
-              '계정 삭제',
-              style: textTheme.bodyLarge?.copyWith(
-                color: AppColors.holiday,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            onTap: () => _confirmDeleteAccount(context),
-          ),
-        ],
         if (showLegal) ...[
           if (showLegalSectionLabel) ...[
             const SizedBox(height: 20),
@@ -319,11 +274,7 @@ class AccountExtrasSection extends StatelessWidget {
               Icons.chevron_right_rounded,
               color: AppColors.textSecondary,
             ),
-            onTap: () => _openLegal(
-              context,
-              title: '이용약관',
-              body: LegalTexts.termsOfServiceMarkdown,
-            ),
+            onTap: () => LegalLinks.openTermsOfService(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -335,11 +286,7 @@ class AccountExtrasSection extends StatelessWidget {
               Icons.chevron_right_rounded,
               color: AppColors.textSecondary,
             ),
-            onTap: () => _openLegal(
-              context,
-              title: '개인정보처리방침',
-              body: LegalTexts.privacyPolicyMarkdown,
-            ),
+            onTap: () => LegalLinks.openPrivacyPolicy(context),
           ),
           const Divider(height: 1),
           ListTile(
@@ -364,6 +311,36 @@ class AccountExtrasSection extends StatelessWidget {
             minLeadingWidth: 24,
             horizontalTitleGap: 12,
             title: Text(AppConstants.appVersionLabel),
+          ),
+        ],
+        if (showLogoutDelete) ...[
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            minLeadingWidth: 24,
+            horizontalTitleGap: 12,
+            title: Text(
+              '로그아웃',
+              style: textTheme.bodyLarge?.copyWith(
+                color: AppColors.holiday,
+              ),
+            ),
+            onTap: () => _confirmLogout(context),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            minLeadingWidth: 24,
+            horizontalTitleGap: 12,
+            title: Text(
+              '회원탈퇴',
+              style: textTheme.bodyLarge?.copyWith(
+                color: AppColors.holiday,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            onTap: () => _confirmDeleteAccount(context),
           ),
         ],
         if (showSupportEmail) ...[

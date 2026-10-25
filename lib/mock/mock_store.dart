@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
@@ -11,6 +13,7 @@ import '../core/exceptions/schedule_exceptions.dart';
 import '../core/time/kst_date_time.dart';
 import '../features/notifications/domain/app_notification_dispatcher.dart';
 import '../models/models.dart';
+import '../services/labor_cost_memo.dart';
 import '../services/payroll_calculator.dart';
 import 'mock_session.dart';
 import 'mock_user.dart';
@@ -32,6 +35,25 @@ class MockStore extends ChangeNotifier {
   final _uuid = const Uuid();
   final _random = Random();
 
+  /// 출퇴근·대타 등 Write 동시 진입 차단 (연타 race)
+  final Set<String> _writeLocks = {};
+
+  /// 인건비 메모 무효화용 리비전 (출퇴근·배정·계약 변경 시 증가)
+  int dataRevision = 0;
+
+  /// 방별 출퇴근 Firestore 동기화 진행/완료 가드 (무한 fetch 방지)
+  final Set<String> _attendanceSyncInFlight = {};
+  final Set<String> _attendanceSyncedRooms = {};
+
+  void _bumpDataRevision() {
+    dataRevision++;
+    LaborCostMemo.invalidate();
+  }
+
+  bool _acquireWriteLock(String key) => _writeLocks.add(key);
+
+  void _releaseWriteLock(String key) => _writeLocks.remove(key);
+
   final Map<String, RoomModel> rooms = {};
   final Map<String, RoomMemberModel> members = {};
   final Map<String, RoomInviteModel> invites = {};
@@ -51,8 +73,8 @@ class MockStore extends ChangeNotifier {
   String? lastAssignedRoomId;
   int lastAssignedCount = 0;
 
-  /// 개발/테스트용 GPS 우회 (UI 비노출 — 내부 출퇴근 로직만 사용)
-  bool gpsBypassEnabled = true;
+  /// 개발/테스트용 GPS 우회 (true면 반경 검증 생략). 기본 false — 실제 GPS 검증.
+  bool gpsBypassEnabled = false;
 
   /// 매장별 사장 설정 (시급·수당·알림)
   final Map<String, RoomOwnerPrefs> roomOwnerPrefs = {};
@@ -101,6 +123,8 @@ class MockStore extends ChangeNotifier {
     attendanceLogs.clear();
     shiftSwaps.clear();
     notices.clear();
+    _attendanceSyncedRooms.clear();
+    _attendanceSyncInFlight.clear();
     ensureDemoWorkspace();
   }
 
@@ -144,8 +168,67 @@ class MockStore extends ChangeNotifier {
 
     final updated = target.copyWith(contract: contract);
     members[key] = updated;
+    _bumpDataRevision();
     notifyListeners();
+    _persistRoomMember(updated);
     return updated;
+  }
+
+  /// 방 출퇴근 로그를 Firestore에서 병합 (앱 재실행·타 기기 정합성)
+  Future<void> syncAttendanceLogsForRoom(String roomId) async {
+    if (roomId.isEmpty || Firebase.apps.isEmpty) return;
+    if (_attendanceSyncedRooms.contains(roomId)) return;
+    if (!_attendanceSyncInFlight.add(roomId)) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection(FirestorePaths.attendanceLogs)
+          .where('roomId', isEqualTo: roomId)
+          .get();
+      var merged = 0;
+      for (final doc in snap.docs) {
+        try {
+          final remote = AttendanceLogModel.fromFirestore(doc);
+          final local = attendanceLogs[remote.id];
+          if (local == null) {
+            attendanceLogs[remote.id] = remote;
+            merged++;
+          }
+        } catch (e) {
+          debugPrint('[MockStore] attendance parse skip ${doc.id}: $e');
+        }
+      }
+      _attendanceSyncedRooms.add(roomId);
+      if (merged > 0) {
+        _bumpDataRevision();
+        notifyListeners();
+      }
+      debugPrint(
+        '[MockStore] attendance sync room=$roomId docs=${snap.docs.length} merged=$merged',
+      );
+    } catch (e) {
+      debugPrint('[MockStore] attendance sync FAIL room=$roomId: $e');
+    } finally {
+      _attendanceSyncInFlight.remove(roomId);
+    }
+  }
+
+  void _persistRoomMember(RoomMemberModel member) {
+    if (Firebase.apps.isEmpty) return;
+    try {
+      FirebaseFirestore.instance
+          .collection(FirestorePaths.roomMembers)
+          .doc(FirestorePaths.roomMemberDocId(member.roomId, member.userId))
+          .set(member.toFirestore(), SetOptions(merge: true))
+          .then((_) {
+        debugPrint(
+          '[MockStore] room_members sync ok ${member.roomId}_${member.userId}',
+        );
+      }).catchError((Object e) {
+        debugPrint('[MockStore] room_members sync FAIL: $e');
+      });
+    } catch (e) {
+      debugPrint('[MockStore] room_members sync skip: $e');
+    }
   }
 
   /// 사장 매장 + 초대 직원 멤버십이 없으면 시드
@@ -877,7 +960,54 @@ class MockStore extends ChangeNotifier {
     final user = _session.currentUser;
     if (user == null) throw const NotAuthenticatedException();
 
-    final membership = getMembership(roomId, user.uid);
+    final lockKey =
+        'schedule:$roomId:$workerId:${startTime.millisecondsSinceEpoch}';
+    if (!_acquireWriteLock(lockKey)) {
+      throw const RoomPermissionDeniedException(
+        '근무 배정 처리 중입니다. 잠시만 기다려 주세요.',
+      );
+    }
+    try {
+      return _createScheduleUnlocked(
+        roomId: roomId,
+        workerId: workerId,
+        startTime: startTime,
+        endTime: endTime,
+        note: note,
+        assignmentBatchId: assignmentBatchId,
+        isPeriodBatch: isPeriodBatch,
+        hourlyWage: hourlyWage,
+        estimatedPay: estimatedPay,
+        includeWeeklyHoliday: includeWeeklyHoliday,
+        includeOvertimeNight: includeOvertimeNight,
+        breakMinutes: breakMinutes,
+        payEstimate: payEstimate,
+        notifyWorker: notifyWorker,
+        userUid: user.uid,
+      );
+    } finally {
+      _releaseWriteLock(lockKey);
+    }
+  }
+
+  ScheduleModel _createScheduleUnlocked({
+    required String roomId,
+    required String workerId,
+    required DateTime startTime,
+    required DateTime endTime,
+    String? note,
+    String? assignmentBatchId,
+    bool isPeriodBatch = false,
+    int? hourlyWage,
+    int? estimatedPay,
+    bool includeWeeklyHoliday = false,
+    bool includeOvertimeNight = false,
+    int breakMinutes = 0,
+    PayEstimate? payEstimate,
+    bool notifyWorker = true,
+    required String userUid,
+  }) {
+    final membership = getMembership(roomId, userUid);
     if (membership == null || !membership.role.canManageSchedules) {
       throw const RoomPermissionDeniedException('근무표 작성 권한이 없습니다.');
     }
@@ -891,6 +1021,11 @@ class MockStore extends ChangeNotifier {
     }
     if (!endTime.isAfter(startTime)) {
       throw const InvalidScheduleTimeException();
+    }
+    final assignDay = DateTime(startTime.year, startTime.month, startTime.day);
+    final today = KstDateTime.today();
+    if (assignDay.isBefore(today)) {
+      throw const PastDateAssignmentException();
     }
     if (_hasDuplicateShift(
       roomId: roomId,
@@ -917,7 +1052,7 @@ class MockStore extends ChangeNotifier {
       id: id,
       roomId: roomId,
       workerId: workerId,
-      assignedBy: user.uid,
+      assignedBy: userUid,
       date: DateFormat('yyyy-MM-dd').format(startTime),
       startTime: startTime,
       endTime: endTime,
@@ -943,6 +1078,7 @@ class MockStore extends ChangeNotifier {
       workerId: workerId,
       count: 1,
     );
+    _bumpDataRevision();
     notifyListeners();
 
     // 2) 근무 배정 → 알바 (일괄 배정 시 첫 건만 + burst/content dedupe)
@@ -1023,6 +1159,11 @@ class MockStore extends ChangeNotifier {
       uniqueDays[DateFormat('yyyy-MM-dd').format(day)] = day;
     }
     final sorted = uniqueDays.values.toList()..sort();
+
+    final today = KstDateTime.today();
+    if (sorted.any((d) => d.isBefore(today))) {
+      throw const PastDateAssignmentException();
+    }
 
     // 배정 전에 날짜별 중복을 한 번에 검사 (부분 생성 방지)
     for (final day in sorted) {
@@ -1902,51 +2043,75 @@ class MockStore extends ChangeNotifier {
     final user = _session.currentUser;
     if (user == null) throw const NotAuthenticatedException();
 
-    final schedule = schedules[scheduleId];
-    if (schedule == null) {
-      throw StateError('근무표를 찾을 수 없습니다.');
+    final lockKey = 'swap:$scheduleId';
+    if (!_acquireWriteLock(lockKey)) {
+      throw const RoomPermissionDeniedException(
+        '대타 요청 처리 중입니다. 잠시만 기다려 주세요.',
+      );
     }
-    if (schedule.workerId != user.uid) {
-      throw const RoomPermissionDeniedException('본인 근무만 대타 요청할 수 있습니다.');
-    }
-    if (toWorkerId == user.uid) {
-      throw const RoomPermissionDeniedException('본인을 대타로 지정할 수 없습니다.');
-    }
-    if (getMembership(schedule.roomId, toWorkerId) == null) {
-      throw const RoomPermissionDeniedException('같은 매장 직원만 지정할 수 있습니다.');
-    }
-    if (openSwapForSchedule(scheduleId) != null) {
-      throw const RoomPermissionDeniedException('이미 진행 중인 대타 요청이 있습니다.');
-    }
-    final trimmed = reason.trim();
-    if (trimmed.isEmpty) {
-      throw const RoomPermissionDeniedException('대타 사유를 입력해 주세요.');
-    }
+    try {
+      final schedule = schedules[scheduleId];
+      if (schedule == null) {
+        throw StateError('근무표를 찾을 수 없습니다.');
+      }
+      if (schedule.workerId != user.uid) {
+        throw const RoomPermissionDeniedException(
+          '본인 근무만 대타 요청할 수 있습니다.',
+        );
+      }
+      if (toWorkerId == user.uid) {
+        throw const RoomPermissionDeniedException(
+          '본인을 대타로 지정할 수 없습니다.',
+        );
+      }
+      if (getMembership(schedule.roomId, toWorkerId) == null) {
+        throw const RoomPermissionDeniedException(
+          '같은 매장 직원만 지정할 수 있습니다.',
+        );
+      }
+      if (openSwapForSchedule(scheduleId) != null) {
+        throw const RoomPermissionDeniedException(
+          '이미 진행 중인 대타 요청이 있습니다.',
+        );
+      }
+      if (isScheduleClockedOut(schedule)) {
+        throw const RoomPermissionDeniedException(
+          '이미 퇴근한 근무는 대타 요청을 할 수 없습니다.',
+        );
+      }
+      final trimmed = reason.trim();
+      if (trimmed.isEmpty) {
+        throw const RoomPermissionDeniedException('대타 사유를 입력해 주세요.');
+      }
 
-    final id = _uuid.v4();
-    final req = ShiftSwapRequest(
-      id: id,
-      roomId: schedule.roomId,
-      scheduleId: scheduleId,
-      fromWorkerId: user.uid,
-      toWorkerId: toWorkerId,
-      reason: trimmed,
-      status: ShiftSwapStatus.pendingColleague,
-      createdAt: KstDateTime.now(),
-    );
-    shiftSwaps[id] = req;
-    notifyListeners();
+      final id = _uuid.v4();
+      final req = ShiftSwapRequest(
+        id: id,
+        roomId: schedule.roomId,
+        scheduleId: scheduleId,
+        fromWorkerId: user.uid,
+        toWorkerId: toWorkerId,
+        reason: trimmed,
+        status: ShiftSwapStatus.pendingColleague,
+        createdAt: KstDateTime.now(),
+      );
+      shiftSwaps[id] = req;
+      _bumpDataRevision();
+      notifyListeners();
 
-    // 5-1) 대타 요청 → 동료 B
-    AppNotificationDispatcher.swapRequested(
-      toWorkerUid: toWorkerId,
-      fromDisplayName: user.displayName,
-      storeId: schedule.roomId,
-      swapId: id,
-      scheduleId: scheduleId,
-    );
+      // 5-1) 대타 요청 → 동료 B
+      AppNotificationDispatcher.swapRequested(
+        toWorkerUid: toWorkerId,
+        fromDisplayName: user.displayName,
+        storeId: schedule.roomId,
+        swapId: id,
+        scheduleId: scheduleId,
+      );
 
-    return req;
+      return req;
+    } finally {
+      _releaseWriteLock(lockKey);
+    }
   }
 
   /// 대타 대상 동료가 수락 → 사장 승인 대기로 전환
@@ -2239,77 +2404,108 @@ class MockStore extends ChangeNotifier {
     final user = _session.currentUser;
     if (user == null) throw const NotAuthenticatedException();
 
-    final room = rooms[roomId];
-    if (room == null) throw const RoomNotFoundException();
-
-    final membership = getMembership(roomId, user.uid);
-    if (membership == null || !membership.isActive) {
-      throw const RoomPermissionDeniedException();
-    }
-
-    if (!hasConfirmedTodaySchedule(roomId, user.uid)) {
+    final lockKey = 'clock:$roomId:${user.uid}';
+    if (!_acquireWriteLock(lockKey)) {
       throw const RoomPermissionDeniedException(
-        '배정된 근무를 확인한 뒤에만 출퇴근할 수 있습니다.',
+        '출퇴근 처리 중입니다. 잠시만 기다려 주세요.',
       );
     }
+    try {
+      final room = rooms[roomId];
+      if (room == null) throw const RoomNotFoundException();
 
-    final todaySchedule = todayScheduleForWorker(roomId, user.uid);
-    if (todaySchedule?.isAbsent == true) {
-      throw const RoomPermissionDeniedException(
-        '결근 처리된 근무는 출퇴근할 수 없습니다.',
-      );
-    }
-
-    // 멱등: 동일 유형 중복 기록 방지
-    if (type == AttendanceType.clockIn &&
-        todayClockIn(roomId, user.uid) != null &&
-        todayClockOut(roomId, user.uid) == null) {
-      throw const RoomPermissionDeniedException('이미 출근 처리되었습니다.');
-    }
-    if (type == AttendanceType.clockOut) {
-      if (todayClockIn(roomId, user.uid) == null) {
-        throw const RoomPermissionDeniedException('출근 기록이 없습니다.');
+      final membership = getMembership(roomId, user.uid);
+      if (membership == null || !membership.isActive) {
+        throw const RoomPermissionDeniedException();
       }
-      if (todayClockOut(roomId, user.uid) != null) {
-        throw const RoomPermissionDeniedException('이미 퇴근 처리되었습니다.');
+
+      if (!hasConfirmedTodaySchedule(roomId, user.uid)) {
+        throw const RoomPermissionDeniedException(
+          '배정된 근무를 확인한 뒤에만 출퇴근할 수 있습니다.',
+        );
       }
-    }
 
-    final id = _uuid.v4();
-    final now = KstDateTime.now();
-    final log = AttendanceLogModel(
-      id: id,
-      roomId: roomId,
-      userId: user.uid,
-      type: type,
-      timestamp: now,
-      location: location ??
-          GeoLocation(
-            latitude: room.location.latitude,
-            longitude: room.location.longitude,
-            isMocked: gpsBypassEnabled,
-          ),
-      distanceFromStoreMeters: distanceFromStoreMeters,
-      isValid: true,
-      scheduleId: todaySchedule?.id,
-      createdAt: now,
-    );
-    attendanceLogs[id] = log;
-    notifyListeners();
+      final todaySchedule = todayScheduleForWorker(roomId, user.uid);
+      if (todaySchedule?.isAbsent == true) {
+        throw const RoomPermissionDeniedException(
+          '결근 처리된 근무는 출퇴근할 수 없습니다.',
+        );
+      }
 
-    // 6) 출·퇴근 → 사장 (설정 on 일 때)
-    final prefs = prefsForRoom(roomId);
-    if (prefs.notifyAttendance && room.ownerId != user.uid) {
-      AppNotificationDispatcher.attendance(
-        ownerUid: room.ownerId,
-        staffDisplayName: user.displayName,
-        isClockIn: type == AttendanceType.clockIn,
-        storeId: roomId,
-        workerUid: user.uid,
+      // 멱등: 동일 유형 중복 기록 방지
+      if (type == AttendanceType.clockIn &&
+          todayClockIn(roomId, user.uid) != null &&
+          todayClockOut(roomId, user.uid) == null) {
+        throw const RoomPermissionDeniedException('이미 출근 처리되었습니다.');
+      }
+      if (type == AttendanceType.clockOut) {
+        if (todayClockIn(roomId, user.uid) == null) {
+          throw const RoomPermissionDeniedException('출근 기록이 없습니다.');
+        }
+        if (todayClockOut(roomId, user.uid) != null) {
+          throw const RoomPermissionDeniedException('이미 퇴근 처리되었습니다.');
+        }
+      }
+
+      final id = _uuid.v4();
+      final now = KstDateTime.now();
+      final log = AttendanceLogModel(
+        id: id,
+        roomId: roomId,
+        userId: user.uid,
+        type: type,
+        timestamp: now,
+        location: location ??
+            GeoLocation(
+              latitude: room.location.latitude,
+              longitude: room.location.longitude,
+              isMocked: gpsBypassEnabled,
+            ),
+        distanceFromStoreMeters: distanceFromStoreMeters,
+        isValid: true,
+        scheduleId: todaySchedule?.id,
+        createdAt: now,
       );
-    }
+      attendanceLogs[id] = log;
+      _bumpDataRevision();
+      notifyListeners();
 
-    return log;
+      // Firestore 동기화 (가능하면) — UI는 MockStore SSOT, 실패해도 무시
+      _persistAttendanceLog(log);
+
+      // 6) 출·퇴근 → 사장 (설정 on 일 때)
+      final prefs = prefsForRoom(roomId);
+      if (prefs.notifyAttendance && room.ownerId != user.uid) {
+        AppNotificationDispatcher.attendance(
+          ownerUid: room.ownerId,
+          staffDisplayName: user.displayName,
+          isClockIn: type == AttendanceType.clockIn,
+          storeId: roomId,
+          workerUid: user.uid,
+        );
+      }
+
+      return log;
+    } finally {
+      _releaseWriteLock(lockKey);
+    }
+  }
+
+  void _persistAttendanceLog(AttendanceLogModel log) {
+    if (Firebase.apps.isEmpty) return;
+    try {
+      FirebaseFirestore.instance
+          .collection(FirestorePaths.attendanceLogs)
+          .doc(log.id)
+          .set(log.toFirestore(forCreate: true), SetOptions(merge: true))
+          .then((_) {
+        debugPrint('[MockStore] attendance_logs sync ok ${log.id}');
+      }).catchError((Object e) {
+        debugPrint('[MockStore] attendance_logs sync FAIL: $e');
+      });
+    } catch (e) {
+      debugPrint('[MockStore] attendance_logs sync skip: $e');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -2630,12 +2826,37 @@ class MockStore extends ChangeNotifier {
 
   /// 해당 날짜에 퇴근 기록이 있는지 (내 근무표 일급여 표시용)
   bool hasClockedOutOnDate(String roomId, String userId, DateTime day) {
+    return clockOutOnDate(roomId, userId, day) != null;
+  }
+
+  /// 해당 날짜(또는 스케줄)의 최신 퇴근 기록
+  AttendanceLogModel? clockOutOnDate(
+    String roomId,
+    String userId,
+    DateTime day, {
+    String? scheduleId,
+  }) {
     final key = DateFormat('yyyy-MM-dd').format(day);
-    return attendanceForUser(roomId, userId).any(
-      (a) =>
-          a.type == AttendanceType.clockOut &&
-          DateFormat('yyyy-MM-dd').format(a.timestamp) == key,
-    );
+    final logs = attendanceForUser(roomId, userId).where((a) {
+      if (a.type != AttendanceType.clockOut) return false;
+      return DateFormat('yyyy-MM-dd').format(a.timestamp) == key;
+    });
+    if (scheduleId != null) {
+      final matched = logs.where((a) => a.scheduleId == scheduleId);
+      if (matched.isNotEmpty) return matched.first;
+    }
+    return logs.isEmpty ? null : logs.first;
+  }
+
+  /// 해당 배정 근무가 퇴근 완료인지 (대타 요청 불가 조건)
+  bool isScheduleClockedOut(ScheduleModel schedule) {
+    return clockOutOnDate(
+          schedule.roomId,
+          schedule.workerId,
+          schedule.startTime,
+          scheduleId: schedule.id,
+        ) !=
+        null;
   }
 
   /// 해당 날짜의 실제 출근~퇴근 구간 (재출근 구간 포함)
@@ -2666,6 +2887,10 @@ class MockStore extends ChangeNotifier {
   }
 
   /// 실제 출퇴근 시간 기준 급여 산정 (배정 시간이 아닌 실근무)
+  ///
+  /// 시급·휴게·연장·야간은 직원 계약 + 당일 배정 옵션을 반영합니다.
+  /// 주휴수당은 주 단위(15시간↑) 집계가 필요하므로 여기선 0 —
+  /// 월간 합산은 [MonthPayrollAggregator]를 쓰세요.
   PayEstimate? actualPayEstimateOnDate(
     String roomId,
     String userId,
@@ -2681,14 +2906,18 @@ class MockStore extends ChangeNotifier {
     // 배정 근무가 없으면(또는 전부 결근) 실근무 급여 미산정
     if (daySchedules.isEmpty) return null;
 
-    final wage = getMembership(roomId, userId)?.hourlyWage ?? 10000;
-    final includeWeekly =
-        daySchedules.any((s) => s.includeWeeklyHoliday);
-    final includeOt =
-        daySchedules.any((s) => s.includeOvertimeNight);
+    final member = getMembership(roomId, userId);
+    final contract = member?.contract;
+    final rawWage = contract?.hourlyWage ?? member?.hourlyWage ?? 0;
+    final int wage =
+        rawWage > 0 ? rawWage : AppConstants.minimumHourlyWage;
+    final scheduleOt = daySchedules.any((s) => s.includeOvertimeNight);
+    final wantOt =
+        (contract?.isOvertimePayEnabled ?? false) || scheduleOt;
+    final wantNight =
+        (contract?.isNightPayEnabled ?? false) || scheduleOt;
 
     var basePay = 0;
-    var weeklyHolidayPay = 0;
     var overtimeNightPay = 0;
     var totalWorkedMinutes = 0;
     var breakMinutes = 0;
@@ -2698,17 +2927,18 @@ class MockStore extends ChangeNotifier {
 
     for (final iv in intervals) {
       final worked = iv.end.difference(iv.start).inMinutes;
-      final br = PayrollCalculator.suggestedBreakMinutes(worked);
+      final br = contract?.resolveBreakMinutes(worked) ??
+          PayrollCalculator.suggestedBreakMinutes(worked);
       final e = PayrollCalculator.estimate(
         startTime: iv.start,
         endTime: iv.end,
         hourlyWage: wage,
         breakMinutes: br,
-        includeWeeklyHoliday: includeWeekly,
-        includeOvertimeNight: includeOt,
+        includeWeeklyHoliday: false,
+        includeOvertime: wantOt,
+        includeNight: wantNight,
       );
       basePay += e.basePay;
-      weeklyHolidayPay += e.weeklyHolidayPay;
       overtimeNightPay += e.overtimeNightPay;
       totalWorkedMinutes += e.totalWorkedMinutes;
       breakMinutes += e.breakMinutes;
@@ -2717,16 +2947,35 @@ class MockStore extends ChangeNotifier {
       nightMinutes += e.nightMinutes;
     }
 
+    if (wantOt &&
+        intervals.length > 1 &&
+        netWorkedMinutes > PayrollCalculator.standardDayMinutes) {
+      final otMin =
+          netWorkedMinutes - PayrollCalculator.standardDayMinutes;
+      final nightOnly = wantNight
+          ? intervals.fold<int>(
+              0,
+              (acc, iv) =>
+                  acc +
+                  PayrollCalculator.nightOverlapMinutes(iv.start, iv.end),
+            )
+          : 0;
+      overtimeMinutes = otMin;
+      nightMinutes = nightOnly;
+      overtimeNightPay =
+          (((otMin + nightOnly) / 60.0) * wage * 0.5).round();
+    }
+
     return PayEstimate(
       hourlyWage: wage,
       totalWorkedMinutes: totalWorkedMinutes,
       breakMinutes: breakMinutes,
       netWorkedMinutes: netWorkedMinutes,
       basePay: basePay,
-      weeklyHolidayPay: weeklyHolidayPay,
+      weeklyHolidayPay: 0,
       overtimeNightPay: overtimeNightPay,
-      includeWeeklyHoliday: includeWeekly,
-      includeOvertimeNight: includeOt,
+      includeWeeklyHoliday: false,
+      includeOvertimeNight: wantOt || wantNight,
       overtimeMinutes: overtimeMinutes,
       nightMinutes: nightMinutes,
     );
@@ -2790,85 +3039,6 @@ class MockStore extends ChangeNotifier {
           );
     }
     return total;
-  }
-
-  /// 사장 대시보드 — 월간(1일~오늘/월말) 인건비·근무시간 로컬 집계
-  MonthlyLaborCost monthlyLaborCost({
-    required String roomId,
-    required int year,
-    required int month,
-    bool includeWeeklyHoliday = false,
-    bool includeEmployerSocialInsurance = false,
-    double employerSocialInsuranceRate = 0.099,
-  }) {
-    final now = DateTime.now();
-    final dim = DateTime(year, month + 1, 0).day;
-    final isCurrent = now.year == year && now.month == month;
-    final endDay = isCurrent ? now.day.clamp(1, dim) : dim;
-    final fromKey =
-        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-01';
-    final toKey =
-        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${endDay.toString().padLeft(2, '0')}';
-
-    var totalBase = 0;
-    var totalWeekly = 0;
-    var totalNetMinutes = 0;
-    final workerIds = <String>{};
-
-    for (final s in schedulesForRoom(roomId)) {
-      if (s.isAbsent) continue;
-      if (s.date.compareTo(fromKey) < 0 || s.date.compareTo(toKey) > 0) {
-        continue;
-      }
-      workerIds.add(s.workerId);
-      final wage = getMembership(roomId, s.workerId)?.hourlyWage ??
-          s.payEstimate?.hourlyWage ??
-          AppConstants.minimumHourlyWage;
-      final wantWeek = includeWeeklyHoliday ||
-          s.includeWeeklyHoliday ||
-          (getMembership(roomId, s.workerId)?.contract.isWeekPayEnabled ??
-              false);
-      final wantOt = s.includeOvertimeNight ||
-          (getMembership(roomId, s.workerId)
-                  ?.contract
-                  .includeOvertimeNight ??
-              false);
-      final estimate = s.payEstimate ??
-          PayrollCalculator.estimate(
-            startTime: s.startTime,
-            endTime: s.endTime,
-            hourlyWage: wage,
-            breakMinutes: s.breakMinutes,
-            includeWeeklyHoliday: wantWeek,
-            includeOvertimeNight: wantOt,
-          );
-      totalBase += estimate.basePay + estimate.overtimeNightPay;
-      totalWeekly += wantWeek ? estimate.weeklyHolidayPay : 0;
-      totalNetMinutes += estimate.netWorkedMinutes;
-    }
-
-    final totalLabor = totalBase + totalWeekly;
-    final insurance = includeEmployerSocialInsurance
-        ? (totalLabor * employerSocialInsuranceRate).round()
-        : 0;
-
-    return MonthlyLaborCost(
-      roomId: roomId,
-      year: year,
-      month: month,
-      periodFrom: fromKey,
-      periodTo: toKey,
-      totalLaborCost: totalLabor,
-      totalWorkHours: (totalNetMinutes / 60.0 * 100).round() / 100.0,
-      activeWorkerCount: workerIds.length,
-      includeWeeklyHoliday: includeWeeklyHoliday,
-      includeEmployerSocialInsurance: includeEmployerSocialInsurance,
-      employerSocialInsuranceRate: employerSocialInsuranceRate,
-      basePay: totalBase,
-      weeklyHolidayPay: totalWeekly,
-      employerSocialInsuranceEstimate: insurance,
-      source: 'mock',
-    );
   }
 
   // ---------------------------------------------------------------------------

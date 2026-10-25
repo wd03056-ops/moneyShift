@@ -9,10 +9,10 @@ alwaysApply: true
 
 ## 1. 사장 방 상세 탭 · 근무표 뷰 전환
 
-- 하단 NavigationBar: **[직원목록] – [근무표] – [설정]** (3탭 고정).
-- 근무표 탭(index 1) 선택 시 AppBar 우측 **리스트 뷰 / 달력 뷰** IconButton 토글 유지.
-- 구현: `RoomDetailScreen`의 `_scheduleCalendarView` → `OwnerScheduleTab(calendarView:)`.
-- 직원 대시보드 탭([출퇴근]–[내 근무표]–[급여·정보])과 혼동해 사장 탭을 바꾸지 말 것.
+- 하단 NavigationBar: **[직원목록] – [근무표] – [초대하기] – [설정]** (4탭 고정).
+- 근무표 탭(index 1) 선택 시 **「근무표」 제목 오른쪽**에 리스트 뷰 / 달력 뷰 IconButton 토글 유지 (AppBar가 아님).
+- 구현: `RoomDetailScreen`의 `_scheduleCalendarView` → `OwnerScheduleTab(calendarView:, onCalendarViewChanged:)`.
+- 직원 대시보드 탭([출퇴근]–[내 근무표]–[내 정보])과 혼동해 사장 탭을 바꾸지 말 것.
 - `isAdminDashboard`는 **owner만** (manager는 직원 UI).
 
 ## 2. 배정 카드 일정 요약 (`formatScheduleSummary`)

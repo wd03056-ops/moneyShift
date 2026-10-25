@@ -78,6 +78,12 @@ class _PendingChangeCardState extends State<PendingChangeCard> {
         content: TextField(
           controller: reasonController,
           maxLines: 3,
+          autocorrect: false,
+          enableSuggestions: false,
+          spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+          smartDashesType: SmartDashesType.disabled,
+          smartQuotesType: SmartQuotesType.disabled,
+          style: const TextStyle(decoration: TextDecoration.none),
           decoration: const InputDecoration(
             hintText: '거절 사유 (선택)',
             border: OutlineInputBorder(),

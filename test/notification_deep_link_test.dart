@@ -12,7 +12,7 @@ void main() {
       );
       expect(
         NotificationDeepLink.routeForType(NotificationType.assign),
-        NotificationRoutes.schedule,
+        NotificationRoutes.assignedSchedule,
       );
       expect(
         NotificationDeepLink.routeForType(NotificationType.requestUpdate),
@@ -105,13 +105,17 @@ void main() {
         createdAt: DateTime(2026, 1, 1),
         data: const {'scheduleId': 'sch_9'},
       );
-      expect(model.targetRoute, NotificationRoutes.schedule);
+      expect(model.targetRoute, NotificationRoutes.assignedSchedule);
       expect(model.params['shiftId'], 'sch_9');
-      expect(model.data['targetRoute'], NotificationRoutes.schedule);
+      expect(
+        model.data['targetRoute'],
+        NotificationRoutes.assignedSchedule,
+      );
       expect(model.deepLink.uriString.contains('storeId'), isTrue);
     });
 
     test('owner/staff tab indices for key routes', () {
+      // 사장: 0직원목록 · 1근무표 · 2초대하기 · 3설정
       expect(
         NotificationDeepLink.tabIndexFor(
           targetRoute: NotificationRoutes.employees,

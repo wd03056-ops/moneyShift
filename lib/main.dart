@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 
+import 'core/ads/ad_bootstrap.dart';
 import 'core/config/dev_auth_config.dart';
 import 'core/config/kakao_config.dart';
 import 'data/config/api_config.dart';
@@ -17,8 +18,8 @@ import 'core/navigation/app_navigation.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/navigation/app_route_names.dart';
 import 'core/security/secure_log.dart';
-import 'core/storage/secure_session_storage.dart';
-import 'core/theme/app_scroll_behavior.dart';
+import 'core/storage/dashboard_pay_view_store.dart';
+import 'core/storage/secure_session_storage.dart';import 'core/theme/app_scroll_behavior.dart';
 import 'core/theme/app_theme.dart';
 import 'core/time/kst_date_time.dart';
 import 'features/auth/data/auth_integration_service.dart';
@@ -64,6 +65,9 @@ Future<void> main() async {
   await Hive.initFlutter();
   await initializeDateFormatting('ko_KR');
 
+  // AdMob (실패해도 앱 기동 계속)
+  await AdBootstrap.init();
+
   SecureLog.d('[KST] ${KstDateTime.debugSummary()}');
 
   MockStore.instance.ensureDemoWorkspace();
@@ -71,6 +75,7 @@ Future<void> main() async {
 
   // 사용자별 푸시 수신 허용 설정 로드
   await NotificationPreferenceStore.instance.ensureLoaded();
+  await DashboardPayViewStore.instance.ensureLoaded();
   await LocalNotificationService.instance.init();
 
   // FCM 포그라운드/오픈 핸들러 (토큰 바인딩은 로그인 시 bindUser)
@@ -116,23 +121,9 @@ class MoneyShiftApp extends StatefulWidget {
 }
 
 class _MoneyShiftAppState extends State<MoneyShiftApp> {
-  static const Color _charcoal = Color(0xFF212529);
-  static const Color _border = Color(0xFFE5E8EB);
-
   StreamSubscription<String>? _inviteSub;
   bool? _wasLoggedIn;
   bool _openingJoin = false;
-
-  static ButtonStyle get _noFillButton => ButtonStyle(
-        backgroundColor: const WidgetStatePropertyAll(Colors.white),
-        foregroundColor: const WidgetStatePropertyAll(_charcoal),
-        elevation: const WidgetStatePropertyAll(2),
-        shadowColor: const WidgetStatePropertyAll(Color(0x14000000)),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        side: const WidgetStatePropertyAll(
-          BorderSide(color: _border, width: 1),
-        ),
-      );
 
   @override
   void initState() {
@@ -197,22 +188,8 @@ class _MoneyShiftAppState extends State<MoneyShiftApp> {
         }
         _wasLoggedIn = readyForHome;
 
-        final base = AppTheme.light;
-        final theme = base.copyWith(
-          scaffoldBackgroundColor: Colors.white,
-          canvasColor: Colors.white,
-          colorScheme: base.colorScheme.copyWith(
-            primary: _charcoal,
-            secondary: _charcoal,
-            onPrimary: _charcoal,
-            onSecondary: _charcoal,
-            surface: Colors.white,
-            surfaceTint: Colors.transparent,
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(style: _noFillButton),
-          filledButtonTheme: FilledButtonThemeData(style: _noFillButton),
-          outlinedButtonTheme: OutlinedButtonThemeData(style: _noFillButton),
-        );
+        // AppTheme.light(Primary Blue CTA) 사용 — 차콜 오버라이드 제거
+        final theme = AppTheme.light;
 
         // MaterialApp 에 ValueKey 를 붙이지 않음 —
         // 로그인/로그아웃 시 전체 트리 dispose → _dependents 깨짐 방지.

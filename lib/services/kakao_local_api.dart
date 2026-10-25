@@ -118,6 +118,7 @@ class KakaoPlaceResult {
     this.roadAddress,
     this.placeName,
     this.buildingName,
+    this.zonecode,
   });
 
   final String address;
@@ -128,6 +129,9 @@ class KakaoPlaceResult {
 
   /// 도로명 주소의 건물명
   final String? buildingName;
+
+  /// 우편번호 (zone_no)
+  final String? zonecode;
 
   final double latitude;
   final double longitude;
@@ -148,13 +152,13 @@ class KakaoPlaceResult {
     return address.trim();
   }
 
-  /// Firestore/방 생성용 표시 문자열
+  /// Firestore/방 생성용 표시 문자열 — `도로명 (건물명)`
   String get displayLabel {
     final title = titleName;
     final addr = primaryAddress;
     if (title != null && title.isNotEmpty) {
       if (addr.isEmpty || addr == title) return title;
-      return '$title · $addr';
+      return '$addr ($title)';
     }
     return addr;
   }
@@ -165,6 +169,7 @@ class KakaoPlaceResult {
     final x = double.tryParse('${doc['x']}') ?? 0;
     final y = double.tryParse('${doc['y']}') ?? 0;
     final building = road?['building_name'] as String?;
+    final zone = (road?['zone_no'] as String?)?.trim();
     return KakaoPlaceResult(
       address: address?['address_name'] as String? ??
           doc['address_name'] as String? ??
@@ -173,6 +178,7 @@ class KakaoPlaceResult {
       buildingName: (building != null && building.trim().isNotEmpty)
           ? building.trim()
           : null,
+      zonecode: (zone != null && zone.isNotEmpty) ? zone : null,
       latitude: y,
       longitude: x,
     );
@@ -199,12 +205,14 @@ class KakaoPlaceResult {
     final address = doc['address'] as Map<String, dynamic>?;
     final road = doc['road_address'] as Map<String, dynamic>?;
     final building = road?['building_name'] as String?;
+    final zone = (road?['zone_no'] as String?)?.trim();
     return KakaoPlaceResult(
       address: address?['address_name'] as String? ?? '',
       roadAddress: road?['address_name'] as String?,
       buildingName: (building != null && building.trim().isNotEmpty)
           ? building.trim()
           : null,
+      zonecode: (zone != null && zone.isNotEmpty) ? zone : null,
       latitude: latitude,
       longitude: longitude,
     );

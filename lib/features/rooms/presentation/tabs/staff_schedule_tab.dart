@@ -493,8 +493,9 @@ class _ScheduleDetailCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = schedule;
+    final store = MockStore.instance;
     final uid = MockSession.instance.currentUser?.uid;
-    final swap = MockStore.instance.openSwapForSchedule(s.id);
+    final swap = store.openSwapForSchedule(s.id);
     final isMine = uid != null && s.workerId == uid;
     final today = DateTime(
       KstDateTime.now().year,
@@ -506,11 +507,22 @@ class _ScheduleDetailCard extends StatelessWidget {
       s.startTime.month,
       s.startTime.day,
     );
-    final canRequest =
-        isMine && swap == null && !s.isAbsent && !scheduleDay.isBefore(today);
+    final clockOut = store.clockOutOnDate(
+      s.roomId,
+      s.workerId,
+      s.startTime,
+      scheduleId: s.id,
+    );
+    final clockedOut = clockOut != null;
+    // 출근 전·근무 중만 대타 가능. 퇴근 완료·과거·결근·진행 중 요청은 불가.
+    final canRequest = isMine &&
+        swap == null &&
+        !s.isAbsent &&
+        !clockedOut &&
+        !scheduleDay.isBefore(today);
 
     final textTheme = Theme.of(context).textTheme;
-    final muted = swap != null || s.isAbsent;
+    final muted = swap != null || s.isAbsent || clockedOut;
 
     return AppCard(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
@@ -533,7 +545,7 @@ class _ScheduleDetailCard extends StatelessWidget {
             children: [
               if (s.isChangeRequested)
                 const ChangeRequestedBadge()
-              else
+              else if (!clockedOut)
                 _StatusBadge(
                   label: s.attendanceStatusLabel,
                   color: s.isAbsent
@@ -541,6 +553,11 @@ class _ScheduleDetailCard extends StatelessWidget {
                       : s.isConfirmed
                           ? AppColors.success
                           : AppColors.warning,
+                ),
+              if (clockedOut)
+                _StatusBadge(
+                  label: '${timeFmt.format(clockOut.timestamp)} 퇴근 완료',
+                  color: AppColors.success,
                 ),
               if (s.status != ScheduleStatus.normal && !s.isChangeRequested)
                 _StatusBadge(
@@ -578,11 +595,21 @@ class _ScheduleDetailCard extends StatelessWidget {
               ),
             ),
           ],
+          if (clockedOut) ...[
+            const SizedBox(height: 10),
+            Text(
+              '${timeFmt.format(clockOut.timestamp)}에 퇴근이 완료된 근무입니다.',
+              style: textTheme.bodySmall?.copyWith(
+                color: AppColors.success,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           if (swap != null) ...[
             const SizedBox(height: 10),
             Text(
               '${swap.status.labelKo} · '
-              '${MockStore.instance.memberDisplayName(s.roomId, swap.toWorkerId)}에게 요청',
+              '${store.memberDisplayName(s.roomId, swap.toWorkerId)}에게 요청',
               style: textTheme.bodySmall?.copyWith(
                 color: AppColors.warning,
                 fontWeight: FontWeight.w500,
@@ -603,7 +630,7 @@ class _ScheduleDetailCard extends StatelessWidget {
           if (!s.isAbsent) ...[
             Builder(
               builder: (context) {
-                final actual = MockStore.instance.actualPayEstimateOnDate(
+                final actual = store.actualPayEstimateOnDate(
                   s.roomId,
                   s.workerId,
                   s.startTime,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_text_input_defaults.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
@@ -94,11 +95,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               TextFormField(
                 controller: _nameController,
                 textInputAction: TextInputAction.next,
+                keyboardType: TextInputType.text,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: AppTextInputDefaults.autocorrect,
+                enableSuggestions: AppTextInputDefaults.enableSuggestions,
+                spellCheckConfiguration:
+                    AppTextInputDefaults.spellCheckConfiguration,
+                smartDashesType: AppTextInputDefaults.smartDashesType,
+                smartQuotesType: AppTextInputDefaults.smartQuotesType,
+                style: const TextStyle(decoration: TextDecoration.none),
                 decoration: const InputDecoration(
                   labelText: '이름',
                   hintText: '표시할 이름을 입력하세요',
                 ),
-                onChanged: (_) => setState(() {}),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) {
                     return '이름을 입력해주세요.';
@@ -114,6 +123,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.done,
+                autocorrect: false,
+                enableSuggestions: false,
+                spellCheckConfiguration:
+                    const SpellCheckConfiguration.disabled(),
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                style: const TextStyle(decoration: TextDecoration.none),
                 decoration: const InputDecoration(
                   labelText: '이메일',
                   hintText: 'example@email.com',

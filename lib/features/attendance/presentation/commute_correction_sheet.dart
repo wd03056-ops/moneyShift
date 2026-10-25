@@ -236,6 +236,13 @@ class _CommuteCorrectionSheetState extends State<CommuteCorrectionSheet> {
               enabled: !_submitting,
               maxLines: 2,
               maxLength: 120,
+              autocorrect: false,
+              enableSuggestions: false,
+              spellCheckConfiguration:
+                  const SpellCheckConfiguration.disabled(),
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
+              style: const TextStyle(decoration: TextDecoration.none),
               decoration: const InputDecoration(
                 labelText: '수정 사유 (필수)',
                 border: OutlineInputBorder(),

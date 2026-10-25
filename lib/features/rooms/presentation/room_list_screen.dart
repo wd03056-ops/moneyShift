@@ -260,6 +260,12 @@ class _RenameRoomDialogState extends State<_RenameRoomDialog> {
         controller: _controller,
         autofocus: true,
         textInputAction: TextInputAction.done,
+        autocorrect: false,
+        enableSuggestions: false,
+        spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+        smartDashesType: SmartDashesType.disabled,
+        smartQuotesType: SmartQuotesType.disabled,
+        style: const TextStyle(decoration: TextDecoration.none),
         decoration: const InputDecoration(
           hintText: '매장명',
           labelText: '매장명',

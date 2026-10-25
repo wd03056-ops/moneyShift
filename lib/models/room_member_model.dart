@@ -17,6 +17,8 @@ class RoomMemberModel extends Equatable {
     required this.userId,
     required this.role,
     required this.displayName,
+    this.customRoleName,
+    this.customRoleId,
     this.isActive = true,
     this.contract = const EmployeeContractModel(),
     this.joinedAt,
@@ -26,6 +28,13 @@ class RoomMemberModel extends Equatable {
   final String userId;
   final MemberRole role;
   final String displayName;
+
+  /// 커스텀 직책 표시명 (초대 코드로 부여)
+  final String? customRoleName;
+
+  /// `rooms/{roomId}/custom_roles/{id}` — 삭제 시 멤버 정리용
+  final String? customRoleId;
+
   final bool isActive;
 
   /// 직원별 기본 시급·휴게·수당 설정
@@ -35,6 +44,13 @@ class RoomMemberModel extends Equatable {
   int? get hourlyWage => contract.hourlyWage;
 
   final DateTime? joinedAt;
+
+  /// UI 직책 라벨 — 커스텀명 우선
+  String get roleLabel {
+    final custom = customRoleName?.trim();
+    if (custom != null && custom.isNotEmpty) return custom;
+    return role.labelKo;
+  }
 
   String get docId => FirestorePaths.roomMemberDocId(roomId, userId);
   String get docPath => FirestorePaths.roomMember(roomId, userId);
@@ -71,6 +87,8 @@ class RoomMemberModel extends Equatable {
       userId: map['userId'] as String? ?? '',
       role: MemberRole.fromFirestore(map['role'] as String? ?? 'parttime'),
       displayName: map['displayName'] as String? ?? '',
+      customRoleName: map['customRoleName'] as String?,
+      customRoleId: map['customRoleId'] as String?,
       isActive: map['isActive'] as bool? ?? true,
       contract: contract,
       joinedAt: _toDateTime(map['joinedAt']),
@@ -83,6 +101,8 @@ class RoomMemberModel extends Equatable {
       'userId': userId,
       'role': role.firestoreValue,
       'displayName': displayName,
+      if (customRoleName != null) 'customRoleName': customRoleName,
+      if (customRoleId != null) 'customRoleId': customRoleId,
       'isActive': isActive,
       'hourlyWage': contract.hourlyWage,
       'contract': contract.toMap(),
@@ -90,11 +110,28 @@ class RoomMemberModel extends Equatable {
     };
   }
 
+  /// 커스텀 직책 삭제 후 — 표시명/ID만 제거하고 [role](권한)은 유지
+  RoomMemberModel clearedCustomRole() {
+    return RoomMemberModel(
+      roomId: roomId,
+      userId: userId,
+      role: role,
+      displayName: displayName,
+      customRoleName: null,
+      customRoleId: null,
+      isActive: isActive,
+      contract: contract,
+      joinedAt: joinedAt,
+    );
+  }
+
   RoomMemberModel copyWith({
     String? roomId,
     String? userId,
     MemberRole? role,
     String? displayName,
+    Object? customRoleName = _unset,
+    Object? customRoleId = _unset,
     bool? isActive,
     EmployeeContractModel? contract,
     int? hourlyWage,
@@ -109,11 +146,19 @@ class RoomMemberModel extends Equatable {
       userId: userId ?? this.userId,
       role: role ?? this.role,
       displayName: displayName ?? this.displayName,
+      customRoleName: identical(customRoleName, _unset)
+          ? this.customRoleName
+          : customRoleName as String?,
+      customRoleId: identical(customRoleId, _unset)
+          ? this.customRoleId
+          : customRoleId as String?,
       isActive: isActive ?? this.isActive,
       contract: nextContract,
       joinedAt: joinedAt ?? this.joinedAt,
     );
   }
+
+  static const Object _unset = Object();
 
   static DateTime? _toDateTime(dynamic value) {
     if (value is Timestamp) return value.toDate();
@@ -127,6 +172,8 @@ class RoomMemberModel extends Equatable {
         userId,
         role,
         displayName,
+        customRoleName,
+        customRoleId,
         isActive,
         contract,
         joinedAt,

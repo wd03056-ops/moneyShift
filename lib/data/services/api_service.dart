@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/monthly_labor_cost.dart';
 import '../config/api_config.dart';
+import '../network/limited_retry_interceptor.dart';
 
 /// Vercel Express API 클라이언트 (dio)
 ///
@@ -31,7 +32,16 @@ class ApiService {
                 },
                 validateStatus: (code) => code != null && code < 500,
               ),
-            );
+            ) {
+    if (dio == null) {
+      _dio.interceptors.add(
+        LimitedRetryInterceptor(
+          maxRetries: 2,
+          baseDelay: const Duration(milliseconds: 400),
+        ),
+      );
+    }
+  }
 
   static final ApiService instance = ApiService();
 
@@ -131,6 +141,58 @@ class ApiService {
     Options? options,
   }) {
     return _dio.delete<T>(path, data: data, options: options);
+  }
+
+  /// `POST /api/auth/kakao` — 카카오 토큰 → Firebase Custom Token
+  Future<KakaoFirebaseAuthResult> exchangeKakaoForFirebaseToken({
+    required String kakaoAccessToken,
+    String? kakaoUserId,
+  }) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/auth/kakao',
+        data: {
+          'kakaoAccessToken': kakaoAccessToken,
+          if (kakaoUserId != null && kakaoUserId.isNotEmpty)
+            'kakaoUserId': kakaoUserId,
+        },
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $kakaoAccessToken',
+          },
+          validateStatus: (_) => true,
+        ),
+      );
+      final data = res.data ?? const <String, dynamic>{};
+      final token = data['customToken']?.toString();
+      final ok = res.statusCode == 200 &&
+          data['ok'] == true &&
+          token != null &&
+          token.isNotEmpty;
+      if (!ok) {
+        debugPrint(
+          '[ApiService] auth/kakao FAIL status=${res.statusCode} body=$data',
+        );
+      }
+      return KakaoFirebaseAuthResult(
+        ok: ok,
+        statusCode: res.statusCode,
+        customToken: ok ? token : null,
+        uid: data['uid']?.toString(),
+        message: data['message']?.toString() ??
+            (ok ? 'OK' : 'status=${res.statusCode}'),
+      );
+    } on DioException catch (e) {
+      debugPrint('[ApiService] auth/kakao FAIL: ${e.message}');
+      return KakaoFirebaseAuthResult(
+        ok: false,
+        statusCode: e.response?.statusCode,
+        message: e.message ?? '연결 실패',
+      );
+    } catch (e) {
+      debugPrint('[ApiService] auth/kakao FAIL: $e');
+      return KakaoFirebaseAuthResult(ok: false, message: '$e');
+    }
   }
 
   /// `DELETE /api/account` — 서버 DB 익명화·언링크
@@ -292,6 +354,22 @@ class ApiService {
       );
     }
   }
+}
+
+class KakaoFirebaseAuthResult {
+  const KakaoFirebaseAuthResult({
+    required this.ok,
+    this.statusCode,
+    this.customToken,
+    this.uid,
+    this.message = '',
+  });
+
+  final bool ok;
+  final int? statusCode;
+  final String? customToken;
+  final String? uid;
+  final String message;
 }
 
 class AccountDeletionApiResult {

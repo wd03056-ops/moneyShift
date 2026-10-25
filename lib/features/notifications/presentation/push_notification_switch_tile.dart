@@ -112,7 +112,7 @@ class _PushNotificationSwitchTileState
                   if (widget.showLeading) ...[
                     Icon(
                       _categoryIcon(cat),
-                      color: AppColors.primary,
+                      color: AppColors.textPrimary,
                       size: 24,
                     ),
                     const SizedBox(width: 12),

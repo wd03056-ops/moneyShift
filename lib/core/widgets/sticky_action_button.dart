@@ -4,10 +4,10 @@ import '../theme/app_colors.dart';
 import '../theme/app_decorations.dart';
 
 enum StickyActionVariant {
-  /// 기본 — 흰 배경 + 테두리 + 그림자
+  /// 기본 — 흰 배경 + 블루 테두리
   primary,
 
-  /// 채움 Primary — 시인성 높은 CTA (확인했습니다 등)
+  /// 채움 Primary Blue — 시인성 높은 CTA
   filled,
 
   /// Emerald — 출근 등
@@ -16,11 +16,11 @@ enum StickyActionVariant {
   /// Amber — 대기·요청 관련
   warning,
 
-  /// Deep Navy 텍스트 강조
+  /// Primary Blue 텍스트 강조 (outline)
   navy,
 }
 
-/// 핵심 액션용 스티키 버튼 — 테두리 + 그림자 입체감
+/// 핵심 액션용 스티키 버튼 — 블루 CTA / 라이트 톤
 class StickyActionButton extends StatelessWidget {
   const StickyActionButton({
     super.key,
@@ -43,22 +43,20 @@ class StickyActionButton extends StatelessWidget {
   /// false면 테두리 없이 그림자만 (카드형 입체감). [filled]에서는 무시.
   final bool showBorder;
 
-  static const Color _charcoal = Color(0xFF212529);
-  static const Color _border = Color(0xFFE5E8EB);
-
-  bool get _isFilled => variant == StickyActionVariant.filled;
+  bool get _isFilled =>
+      variant == StickyActionVariant.filled ||
+      variant == StickyActionVariant.success ||
+      variant == StickyActionVariant.warning;
 
   Color get _fg {
     switch (variant) {
       case StickyActionVariant.filled:
+      case StickyActionVariant.success:
+      case StickyActionVariant.warning:
         return AppColors.buttonOnFill;
       case StickyActionVariant.primary:
       case StickyActionVariant.navy:
-        return _charcoal;
-      case StickyActionVariant.success:
-        return AppColors.success;
-      case StickyActionVariant.warning:
-        return AppColors.warning;
+        return AppColors.primary;
     }
   }
 
@@ -66,10 +64,12 @@ class StickyActionButton extends StatelessWidget {
     switch (variant) {
       case StickyActionVariant.filled:
         return AppColors.buttonFill;
+      case StickyActionVariant.success:
+        return AppColors.success;
+      case StickyActionVariant.warning:
+        return AppColors.warning;
       case StickyActionVariant.primary:
       case StickyActionVariant.navy:
-      case StickyActionVariant.success:
-      case StickyActionVariant.warning:
         return Colors.white;
     }
   }
@@ -80,7 +80,7 @@ class StickyActionButton extends StatelessWidget {
         return AppColors.buttonFill;
       case StickyActionVariant.primary:
       case StickyActionVariant.navy:
-        return _border;
+        return AppColors.borderSubtle;
       case StickyActionVariant.success:
         return AppColors.success;
       case StickyActionVariant.warning:
@@ -94,13 +94,13 @@ class StickyActionButton extends StatelessWidget {
     final fg = active
         ? _fg
         : (_isFilled
-            ? AppColors.buttonOnFill.withValues(alpha: 0.7)
+            ? AppColors.buttonOnFill.withValues(alpha: 0.85)
             : AppColors.textSecondary);
     final bg = active
         ? _bg
         : (_isFilled ? AppColors.accentMuted : Colors.white);
     final border = active ? _borderColor : AppColors.border;
-    final radius = AppDecorations.radiusLg;
+    final radius = AppDecorations.radiusMd; // 12
 
     final child = isLoading
         ? SizedBox(
@@ -124,13 +124,14 @@ class StickyActionButton extends StatelessWidget {
                 Text(
                   label,
                   maxLines: 1,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 16,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.bold,
                     letterSpacing: -0.2,
                     height: 1.2,
-                  ).copyWith(color: fg),
+                    color: fg,
+                  ),
                 ),
               ],
             ),
@@ -144,7 +145,9 @@ class StickyActionButton extends StatelessWidget {
           )
         : AppDecorations.borderedSurface(radius: radius).copyWith(
             color: bg,
-            border: showBorder ? Border.all(color: border, width: 1) : null,
+            border: showBorder
+                ? Border.all(color: border, width: 1.2)
+                : null,
           );
 
     return SizedBox(
@@ -155,17 +158,11 @@ class StickyActionButton extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(radius),
-          child: InkWell(
+          child: GestureDetector(
             onTap: active && !isLoading ? onPressed : null,
-            borderRadius: BorderRadius.circular(radius),
-            splashColor: _isFilled
-                ? Colors.white.withValues(alpha: 0.12)
-                : null,
-            highlightColor: _isFilled
-                ? Colors.white.withValues(alpha: 0.08)
-                : null,
+            behavior: HitTestBehavior.opaque,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Center(child: child),
             ),
           ),
@@ -198,7 +195,7 @@ class StickyActionBar extends StatelessWidget {
       top: false,
       bottom: safeAreaBottom,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
         child: children.length == 1
             ? children.first
             : Row(

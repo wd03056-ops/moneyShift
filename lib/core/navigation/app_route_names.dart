@@ -3,6 +3,7 @@ abstract final class AppRouteNames {
   AppRouteNames._();
 
   static const home = '/';
+  static const login = '/login';
   static const inbox = '/notifications';
   static const createRoom = '/create-room';
   static const joinRoom = '/join-room';
@@ -23,6 +24,9 @@ abstract final class AppRouteNames {
   static String scheduleLogs(String roomId) => '/room/$roomId/schedule-logs';
 
   static String ownerCommute(String roomId) => '/room/$roomId/commute';
+
+  static String laborCostDetail(String roomId) =>
+      '/room/$roomId/labor-cost';
 
   static String invite(String roomId) => '/room/$roomId/invite';
 

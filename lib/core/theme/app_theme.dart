@@ -20,11 +20,9 @@ class _NoTransitionsBuilder extends PageTransitionsBuilder {
   }
 }
 
-/// 전역 테마 — 순백 배경, 버튼 채움(차콜/파랑) 없음 → 테두리만
+/// 전역 테마 — 순백 배경 + Primary Blue CTA
 abstract final class AppTheme {
   static const String _font = 'Pretendard';
-  static const Color _charcoal = Color(0xFF212529);
-  static const Color _border = Color(0xFFE5E8EB);
 
   static const PageTransitionsTheme noSlideTransitions = PageTransitionsTheme(
     builders: {
@@ -37,23 +35,24 @@ abstract final class AppTheme {
     },
   );
 
-  /// 흰 배경 + 테두리 + 부드러운 elevation 그림자
-  static ButtonStyle get _flatOutlineButton {
+  /// 주요 액션 — 블루 채움 + 흰 굵은 글씨 + 둥근 모서리
+  static ButtonStyle get _filledCtaButton {
     return ButtonStyle(
-      backgroundColor: const WidgetStatePropertyAll(Colors.white),
-      foregroundColor: const WidgetStatePropertyAll(_charcoal),
-      overlayColor: WidgetStatePropertyAll(
-        _charcoal.withValues(alpha: 0.06),
-      ),
-      elevation: const WidgetStatePropertyAll(2),
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return AppColors.accentMuted;
+        }
+        return AppColors.buttonFill;
+      }),
+      foregroundColor: const WidgetStatePropertyAll(AppColors.buttonOnFill),
+      overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+      elevation: const WidgetStatePropertyAll(0),
       shadowColor: WidgetStatePropertyAll(AppColors.shadowStrong),
       surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-      side: const WidgetStatePropertyAll(
-        BorderSide(color: _border, width: 1),
-      ),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       ),
+      minimumSize: const WidgetStatePropertyAll(Size(64, 48)),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
@@ -63,8 +62,40 @@ abstract final class AppTheme {
         TextStyle(
           fontFamily: _font,
           fontSize: 15,
-          fontWeight: FontWeight.w600,
-          color: _charcoal,
+          fontWeight: FontWeight.w700,
+          color: AppColors.buttonOnFill,
+        ),
+      ),
+    );
+  }
+
+  /// 보조 — 흰 배경 + 블루 테두리
+  static ButtonStyle get _outlineButton {
+    return ButtonStyle(
+      backgroundColor: const WidgetStatePropertyAll(Colors.white),
+      foregroundColor: const WidgetStatePropertyAll(AppColors.primary),
+      overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+      elevation: const WidgetStatePropertyAll(0),
+      shadowColor: WidgetStatePropertyAll(AppColors.shadowStrong),
+      surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+      side: const WidgetStatePropertyAll(
+        BorderSide(color: AppColors.borderSubtle, width: 1.2),
+      ),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      ),
+      minimumSize: const WidgetStatePropertyAll(Size(64, 48)),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
+        ),
+      ),
+      textStyle: const WidgetStatePropertyAll(
+        TextStyle(
+          fontFamily: _font,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary,
         ),
       ),
     );
@@ -178,31 +209,30 @@ abstract final class AppTheme {
     const white = Colors.white;
     final theme = textTheme;
 
-    // ColorScheme.primary 자체를 차콜로 — M3 기본 파랑 상속 차단
-    final colorScheme = const ColorScheme(
+    final colorScheme = ColorScheme(
       brightness: Brightness.light,
-      primary: _charcoal,
+      primary: AppColors.primary,
       onPrimary: white,
-      primaryContainer: Color(0xFFF2F4F6),
-      onPrimaryContainer: _charcoal,
-      secondary: _charcoal,
+      primaryContainer: AppColors.primarySoft,
+      onPrimaryContainer: AppColors.secondary,
+      secondary: AppColors.secondary,
       onSecondary: white,
-      secondaryContainer: Color(0xFFF2F4F6),
-      onSecondaryContainer: Color(0xFF343A40),
-      tertiary: Color(0xFF10B981),
+      secondaryContainer: AppColors.primarySoft,
+      onSecondaryContainer: AppColors.secondary,
+      tertiary: AppColors.success,
       onTertiary: white,
-      error: Color(0xFFDC2626),
+      error: AppColors.holiday,
       onError: white,
       surface: white,
-      onSurface: Color(0xFF191F28),
-      onSurfaceVariant: Color(0xFF8B95A1),
-      outline: Color(0xFFE5E8EB),
-      outlineVariant: Color(0xFFE5E8EB),
-      shadow: Color(0x0A000000),
-      scrim: Color(0x99000000),
-      inverseSurface: Color(0xFF191F28),
+      onSurface: AppColors.textPrimary,
+      onSurfaceVariant: AppColors.textSecondary,
+      outline: AppColors.border,
+      outlineVariant: AppColors.borderSubtle,
+      shadow: AppColors.shadow,
+      scrim: const Color(0x99000000),
+      inverseSurface: AppColors.textPrimary,
       onInverseSurface: white,
-      inversePrimary: Color(0xFFADB5BD),
+      inversePrimary: AppColors.accentMuted,
       surfaceTint: Colors.transparent,
     );
 
@@ -210,10 +240,15 @@ abstract final class AppTheme {
       useMaterial3: true,
       fontFamily: _font,
       colorScheme: colorScheme,
-      primaryColor: _charcoal,
+      primaryColor: AppColors.primary,
       scaffoldBackgroundColor: white,
       canvasColor: white,
       cardColor: white,
+      // Material 회색 물결(리플) 전역 제거
+      splashFactory: NoSplash.splashFactory,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      hoverColor: Colors.transparent,
       pageTransitionsTheme: noSlideTransitions,
       textTheme: theme,
       primaryTextTheme: theme,
@@ -225,7 +260,6 @@ abstract final class AppTheme {
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
-        // 뒤로가기 ↔ 제목 사이 기본 여백(16) 제거
         titleSpacing: 0,
         leadingWidth: 48,
         systemOverlayStyle: SystemUiOverlayStyle.dark,
@@ -240,36 +274,40 @@ abstract final class AppTheme {
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
       ),
-      // Elevated / Filled — 차콜 채움 제거, 흰 배경+테두리만
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: _flatOutlineButton,
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: _flatOutlineButton,
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: _flatOutlineButton,
-      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: _filledCtaButton),
+      filledButtonTheme: FilledButtonThemeData(style: _filledCtaButton),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: _outlineButton),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: const Color(0xFF343A40),
+          foregroundColor: AppColors.primary,
+          overlayColor: Colors.transparent,
+          splashFactory: NoSplash.splashFactory,
           textStyle: const TextStyle(
             fontFamily: _font,
             fontSize: 13,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          highlightColor: Colors.transparent,
+          hoverColor: Colors.transparent,
+          overlayColor: Colors.transparent,
+        ),
+      ),
+      listTileTheme: const ListTileThemeData(
+        enableFeedback: false,
+      ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: Colors.white,
-        foregroundColor: _charcoal,
-        elevation: 0,
+        backgroundColor: AppColors.buttonFill,
+        foregroundColor: AppColors.buttonOnFill,
+        elevation: 2,
       ),
       inputDecorationTheme: const InputDecorationTheme(
         filled: false,
         fillColor: Colors.transparent,
         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        // 입력 중 밑줄(Underline) 제거
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
         focusedBorder: InputBorder.none,
@@ -290,44 +328,50 @@ abstract final class AppTheme {
         ),
       ),
       dividerTheme: const DividerThemeData(
-        color: Color(0xFFE5E8EB),
+        color: AppColors.border,
         thickness: 1,
         space: 1,
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: _charcoal,
-        contentTextStyle: theme.bodyLarge?.copyWith(color: Colors.white),
+        backgroundColor: AppColors.secondary,
+        contentTextStyle: theme.bodyLarge?.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
         ),
       ),
-      // Material 기본 날짜 선택기 — 선택일 숫자 보이도록 (흰 글씨)
       datePickerTheme: DatePickerThemeData(
         backgroundColor: white,
         surfaceTintColor: Colors.transparent,
-        headerBackgroundColor: white,
-        headerForegroundColor: _charcoal,
+        headerBackgroundColor: AppColors.primarySoft,
+        headerForegroundColor: AppColors.secondary,
         dayForegroundColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return white;
           if (states.contains(WidgetState.disabled)) {
             return AppColors.textSecondary;
           }
-          return _charcoal;
+          return AppColors.textPrimary;
         }),
         dayBackgroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return _charcoal;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.primary;
+          }
           return Colors.transparent;
         }),
         todayForegroundColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return white;
-          return _charcoal;
+          return AppColors.primary;
         }),
         todayBackgroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return _charcoal;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.primary;
+          }
           return Colors.transparent;
         }),
-        todayBorder: const BorderSide(color: Colors.transparent),
+        todayBorder: const BorderSide(color: AppColors.primary, width: 1),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppDecorations.radiusLg),
         ),
@@ -337,7 +381,7 @@ abstract final class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: Colors.white,
-        indicatorColor: _charcoal.withValues(alpha: 0.08),
+        indicatorColor: AppColors.surfaceMuted,
         elevation: 0,
         shadowColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
@@ -348,16 +392,31 @@ abstract final class AppTheme {
             fontFamily: _font,
             fontSize: 12,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? _charcoal : AppColors.textSecondary,
+            color: selected ? AppColors.textPrimary : AppColors.textSecondary,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(
             size: 24,
-            color: selected ? _charcoal : AppColors.textSecondary,
+            color: selected ? AppColors.textPrimary : AppColors.textSecondary,
           );
         }),
+      ),
+      // 설정 화면 OutlinedToggle 과 동일 — ON 초록 / OFF 회색
+      switchTheme: SwitchThemeData(
+        thumbColor: const WidgetStatePropertyAll(Colors.white),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const Color(0xFF34C759);
+          }
+          return const Color(0xFFE5E5EA);
+        }),
+        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: AppColors.primary,
       ),
     );
   }

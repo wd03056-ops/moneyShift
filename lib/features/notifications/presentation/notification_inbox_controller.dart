@@ -13,11 +13,13 @@ class NotificationInboxController extends ChangeNotifier {
   NotificationInboxController({
     required String uid,
     NotificationInboxService? service,
-  })  : _uid = uid,
-        _service = service ?? NotificationInboxService();
+  }) : _service = service ?? NotificationInboxService() {
+    // bindUser 로 재할당되는 가변 필드 — initializing formal 미사용
+    _uid = uid;
+  }
 
   /// 현재 구독 중인 수신자 UID (계정 전환 시 [bindUser]로 갱신)
-  String _uid;
+  late String _uid;
   final NotificationInboxService _service;
 
   StreamSubscription<List<NotificationItem>>? _sub;

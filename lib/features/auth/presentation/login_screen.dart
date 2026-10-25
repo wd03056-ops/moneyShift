@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 
@@ -6,8 +7,6 @@ import '../../../core/config/dev_auth_config.dart';
 import '../../../core/config/kakao_config.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/deeplink/invite_deep_link_service.dart';
-import '../../../core/navigation/app_navigation.dart';
-import '../../../core/navigation/app_route_names.dart';
 import '../../../core/storage/secure_session_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
@@ -15,13 +14,12 @@ import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../mock/mock_user.dart';
-import '../../legal/legal_document_screen.dart';
-import '../../legal/legal_texts.dart';
+import '../../legal/legal_links.dart';
 import '../data/auth_service.dart';
 import '../data/mock_auth_service.dart';
 import 'widgets/kakao_login_button.dart';
 
-/// 개발·테스트용 계정 선택 로그인 + 카카오 로그인
+/// 카카오 로그인(실연동) + 개발용 테스트 로그인
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -31,14 +29,39 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _kakaoLoading = false;
+  bool _mockLoading = false;
+
+  bool get _busy => _kakaoLoading || _mockLoading;
+
+  @override
+  void initState() {
+    super.initState();
+    MockSession.instance.addListener(_onSessionChanged);
+  }
+
+  @override
+  void dispose() {
+    MockSession.instance.removeListener(_onSessionChanged);
+    super.dispose();
+  }
+
+  /// 로그인 성공 시 push 된 로그인 라우트를 닫아 AuthHomeGate(메인/온보딩)가 보이게 함
+  void _onSessionChanged() {
+    if (!mounted) return;
+    if (!MockSession.instance.isLoggedIn) return;
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    }
+  }
 
   void _loginAs(MockUser user) {
     MockSession.instance.loginAs(user);
   }
 
   Future<void> _loginWithMock(MockAuthPersona persona) async {
-    if (_kakaoLoading) return;
-    setState(() => _kakaoLoading = true);
+    if (_busy) return;
+    setState(() => _mockLoading = true);
     try {
       final result = await AuthService.instance.signInWithMock(
         persona: persona,
@@ -56,7 +79,6 @@ class _LoginScreenState extends State<LoginScreen> {
         firebaseUid: result.firebaseUid,
       );
       MockSession.instance.loginAs(result.mockUser);
-      // AuthHomeGate 가 realName 유무로 메인/온보딩 분기
       _showMessage(
         result.needsProfileSetup
             ? '실명 등록이 필요합니다'
@@ -68,18 +90,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       _showMessage('Mock 로그인 실패: $e');
     } finally {
-      if (mounted) setState(() => _kakaoLoading = false);
+      if (mounted) setState(() => _mockLoading = false);
     }
   }
 
+  /// 실제 카카오 SDK 로그인 창 (톡/계정)
   Future<void> _loginWithKakao() async {
-    if (_kakaoLoading) return;
-
-    // Mock 모드에서도 강제 실로그인 테스트가 필요하면 플래그를 끈다.
-    if (DevAuthConfig.isMockAuthEnabled) {
-      await _loginWithMock(MockAuthPersona.owner);
-      return;
-    }
+    if (_busy) return;
 
     if (!KakaoConfig.isConfigured) {
       _showMessage(
@@ -156,72 +173,69 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _openLegal(
-    BuildContext context, {
-    required String title,
-    required String body,
-  }) {
-    final slug = title.hashCode.toRadixString(16);
-    AppNavigation.pushSingleTop(
-      name: AppRouteNames.legal(slug),
-      builder: (_) => LegalDocumentScreen(title: title, body: body),
-    );
+  void _onAppBarBack() {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+      return;
+    }
+    // 로그아웃 후 루트 로그인 — 스택에 돌아갈 화면이 없을 때
+    // (시스템 뒤로가기와 동일하게 앱을 종료하지 않고 안내만)
   }
 
   @override
   Widget build(BuildContext context) {
     final accounts = MockUser.switchableAccounts;
     final textTheme = Theme.of(context).textTheme;
+    final canPop = Navigator.of(context).canPop();
+    final showTestLogin = DevAuthConfig.isMockAuthEnabled || kDebugMode;
 
     return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        automaticallyImplyLeading: false,
+        leading: canPop
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                tooltip: '뒤로',
+                onPressed: _onAppBarBack,
+              )
+            : null,
+        title: const Text('로그인'),
+        centerTitle: false,
+      ),
       body: ScrollablePageBody(
-        padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+        top: false,
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               AppConstants.appName,
-              style: textTheme.titleLarge?.copyWith(
+              style: textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w800,
-                color: AppColors.primary,
+                color: AppColors.textPrimary,
                 letterSpacing: -0.6,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              DevAuthConfig.isMockAuthEnabled
-                  ? 'Mock 인증 모드 · 카카오 SDK 없이 테스트'
-                  : '카카오로 로그인하거나 테스트 계정을 선택하세요',
-              style: textTheme.bodyMedium,
+              '카카오 계정으로 간편하게 시작하세요',
+              style: textTheme.bodyMedium?.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: 8),
-            Text(
-              '데모 매장 · 초대코드 ${MockStore.demoInviteCode}',
-              style: textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
             Text(
               '만 ${AppConstants.minimumAgeYears}세 이상만 이용할 수 있습니다.',
               style: textTheme.bodySmall?.copyWith(
                 color: AppColors.textCaption,
               ),
             ),
-            if (DevAuthConfig.isMockAuthEnabled) ...[
-              const SizedBox(height: 16),
-              AppCard(
-                padding: const EdgeInsets.all(14),
-                child: Text(
-                  'useMockAuth=true\n'
-                  '사장 UID: ${MockAuthService.ownerUid}\n'
-                  '알바 UID: ${MockAuthService.staffUid}\n'
-                  '끄려면 DevAuthConfig.useMockAuth = false',
-                  style: textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    height: 1.45,
-                  ),
-                ),
-              ),
-            ],
             FutureBuilder<String?>(
               future: InviteDeepLinkService.instance.peekPendingCode(),
               builder: (context, snap) {
@@ -241,78 +255,112 @@ class _LoginScreenState extends State<LoginScreen> {
                 );
               },
             ),
-            const SizedBox(height: 28),
-            if (DevAuthConfig.isMockAuthEnabled) ...[
-              AppCard(
-                onTap: _kakaoLoading
-                    ? null
-                    : () => _loginWithMock(MockAuthPersona.owner),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Mock 사장으로 로그인',
-                      style: textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '테스트 사용자 · ${MockAuthService.ownerUid}',
-                      style: textTheme.bodyMedium,
-                    ),
-                  ],
+            const SizedBox(height: 32),
+            KakaoLoginButton(
+              onPressed: _busy ? null : _loginWithKakao,
+              isLoading: _kakaoLoading,
+            ),
+            if (!KakaoConfig.isConfigured) ...[
+              const SizedBox(height: 8),
+              Text(
+                '카카오 앱 키가 없습니다. 설정 후 이용할 수 있습니다.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.holiday,
                 ),
-              ),
-              const SizedBox(height: 12),
-              AppCard(
-                onTap: _kakaoLoading
-                    ? null
-                    : () => _loginWithMock(MockAuthPersona.staff),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Mock 알바로 로그인',
-                      style: textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '테스트 알바 · ${MockAuthService.staffUid}',
-                      style: textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-            ] else ...[
-              KakaoLoginButton(
-                onPressed: _kakaoLoading ? null : _loginWithKakao,
-                isLoading: _kakaoLoading,
               ),
             ],
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                const Expanded(child: Divider(color: AppColors.border)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+            if (showTestLogin) ...[
+              const SizedBox(height: 28),
+              Row(
+                children: [
+                  const Expanded(child: Divider(color: AppColors.border)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      '테스트 로그인',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  const Expanded(child: Divider(color: AppColors.border)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '개발용 · 카카오 SDK 없이 바로 진입',
+                textAlign: TextAlign.center,
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.textCaption,
+                ),
+              ),
+              if (DevAuthConfig.isMockAuthEnabled) ...[
+                const SizedBox(height: 12),
+                AppCard(
+                  padding: const EdgeInsets.all(14),
                   child: Text(
-                    '또는 로컬 목업 계정',
+                    'Mock Auth ON\n'
+                    '사장 UID: ${MockAuthService.ownerUid}\n'
+                    '알바 UID: ${MockAuthService.staffUid}',
                     style: textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
                     ),
                   ),
                 ),
-                const Expanded(child: Divider(color: AppColors.border)),
+                const SizedBox(height: 12),
+                AppCard(
+                  onTap: _busy
+                      ? null
+                      : () => _loginWithMock(MockAuthPersona.owner),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Mock 사장으로 로그인', style: textTheme.titleMedium),
+                      const SizedBox(height: 4),
+                      Text(
+                        '테스트 사용자 · ${MockAuthService.ownerUid}',
+                        style: textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                AppCard(
+                  onTap: _busy
+                      ? null
+                      : () => _loginWithMock(MockAuthPersona.staff),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Mock 알바로 로그인', style: textTheme.titleMedium),
+                      const SizedBox(height: 4),
+                      Text(
+                        '테스트 알바 · ${MockAuthService.staffUid}',
+                        style: textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
               ],
-            ),
-            const SizedBox(height: 20),
-            for (var i = 0; i < accounts.length; i++) ...[
-              if (i > 0) const SizedBox(height: 12),
-              _AccountLoginCard(
-                user: accounts[i],
-                onTap: () => _loginAs(accounts[i]),
+              const SizedBox(height: 16),
+              Text(
+                '데모 매장 · 초대코드 ${MockStore.demoInviteCode}',
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppColors.textCaption,
+                ),
               ),
+              const SizedBox(height: 12),
+              for (var i = 0; i < accounts.length; i++) ...[
+                if (i > 0) const SizedBox(height: 12),
+                _AccountLoginCard(
+                  user: accounts[i],
+                  onTap: _busy ? null : () => _loginAs(accounts[i]),
+                ),
+              ],
             ],
             const SizedBox(height: 28),
             Wrap(
@@ -326,11 +374,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 GestureDetector(
-                  onTap: () => _openLegal(
-                    context,
-                    title: '이용약관',
-                    body: LegalTexts.termsOfServiceMarkdown,
-                  ),
+                  onTap: () => LegalLinks.openTermsOfService(context),
                   child: Text(
                     '이용약관',
                     style: textTheme.bodySmall?.copyWith(
@@ -347,11 +391,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 GestureDetector(
-                  onTap: () => _openLegal(
-                    context,
-                    title: '개인정보처리방침',
-                    body: LegalTexts.privacyPolicyMarkdown,
-                  ),
+                  onTap: () => LegalLinks.openPrivacyPolicy(context),
                   child: Text(
                     '개인정보처리방침',
                     style: textTheme.bodySmall?.copyWith(
@@ -369,16 +409,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              DevAuthConfig.isMockAuthEnabled
-                  ? 'Mock Auth ON · Firestore users/stores 시드'
-                  : (KakaoConfig.isConfigured
-                      ? '카카오 로그인 · Firestore 연동'
-                      : '카카오 키 미설정'),
-              textAlign: TextAlign.center,
-              style: textTheme.bodySmall,
-            ),
           ],
         ),
       ),
@@ -393,7 +423,7 @@ class _AccountLoginCard extends StatelessWidget {
   });
 
   final MockUser user;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

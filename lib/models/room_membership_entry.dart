@@ -16,6 +16,8 @@ class RoomMembershipEntry extends Equatable {
 
   MemberRole get role => membership.role;
 
+  String get roleLabel => membership.roleLabel;
+
   bool get isOwnedByMe => role == MemberRole.owner;
 
   bool get isInvited => role != MemberRole.owner;

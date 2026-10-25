@@ -55,3 +55,14 @@ class DuplicateScheduleException implements Exception {
   @override
   String toString() => message;
 }
+
+/// 신규 배정 시 과거 날짜 차단
+class PastDateAssignmentException implements Exception {
+  const PastDateAssignmentException([
+    this.message = '지나간 날짜에는 새 근무를 배정할 수 없습니다.',
+  ]);
+  final String message;
+
+  @override
+  String toString() => message;
+}

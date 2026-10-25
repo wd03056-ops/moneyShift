@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_decorations.dart';
+import 'app_text_input_defaults.dart';
 
 /// 테두리 + 그림자의 입체 카드
 class AppCard extends StatelessWidget {
@@ -30,9 +31,9 @@ class AppCard extends StatelessWidget {
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(radius),
           clipBehavior: Clip.antiAlias,
-          child: InkWell(
+          child: GestureDetector(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(radius),
+            behavior: HitTestBehavior.opaque,
             child: Padding(padding: padding, child: child),
           ),
         ),
@@ -140,11 +141,13 @@ class AppPlainTextField extends StatelessWidget {
       onChanged: onChanged,
       onSubmitted: onSubmitted,
       textAlignVertical: textAlignVertical,
-      autocorrect: false,
-      enableSuggestions: false,
-      spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
-      style: (style ?? Theme.of(context).textTheme.bodyLarge)?.copyWith(
-        decoration: TextDecoration.none,
+      autocorrect: AppTextInputDefaults.autocorrect,
+      enableSuggestions: AppTextInputDefaults.enableSuggestions,
+      spellCheckConfiguration: AppTextInputDefaults.spellCheckConfiguration,
+      smartDashesType: AppTextInputDefaults.smartDashesType,
+      smartQuotesType: AppTextInputDefaults.smartQuotesType,
+      style: AppTextInputDefaults.styleWithoutDecoration(
+        style ?? Theme.of(context).textTheme.bodyLarge,
       ),
       decoration: plainDecoration.copyWith(
         hintText: hintText,

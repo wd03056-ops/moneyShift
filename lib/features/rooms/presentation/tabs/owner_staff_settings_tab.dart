@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/navigation/app_navigation.dart';
-import '../../../../core/navigation/app_route_names.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/async_action_guard.dart';
 import '../../../../core/widgets/app_select_chip.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
 import '../../../../mock/app_listenables.dart';
-import '../../../../mock/mock_session.dart';
 import '../../../../mock/mock_store.dart';
 import '../../../../models/models.dart';
-import '../../../notifications/presentation/notification_inbox_screen.dart';
+import '../../../../services/kakao_local_api.dart';
 import '../../../notifications/presentation/push_notification_switch_tile.dart';
 import '../../../profile/presentation/account_extras_section.dart';
+import '../widgets/daum_postcode_sheet.dart';
 
 /// 사장 전용 매장 설정 — 프로덕션 메뉴 구조
 class OwnerStaffSettingsTab extends StatelessWidget {
@@ -71,7 +70,7 @@ class OwnerStaffSettingsTab extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // 4. 계정 · 알림
+              // 계정 · 알림
               _SettingsSection(
                 title: '계정 및 알림',
                 children: [
@@ -79,35 +78,22 @@ class OwnerStaffSettingsTab extends StatelessWidget {
                     dense: true,
                     inCard: false,
                   ),
-                  const Divider(height: 1),
-                  _SettingsTile(
-                    title: '알림함',
-                    subtitle: '받은 알림 확인',
-                    leading: Icons.notifications_none_rounded,
-                    onTap: () {
-                      final uid = MockSession.instance.currentUser?.uid;
-                      if (uid == null) return;
-                      AppNavigation.pushSingleTop(
-                        name: AppRouteNames.inbox,
-                        builder: (_) => NotificationInboxScreen(uid: uid),
-                      );
-                    },
-                  ),
                   const AccountExtrasSection(
                     showLegal: false,
+                    showLogoutDelete: false,
                     showSupportEmail: false,
                   ),
                 ],
               ),
               const SizedBox(height: 20),
 
-              // 5. 약관 · 버전
+              // 5. 약관 · 버전 · 로그아웃/회원탈퇴
               const _SettingsSection(
                 title: '약관 및 정책',
                 children: [
                   AccountExtrasSection(
                     showProfileEdit: false,
-                    showLogoutDelete: false,
+                    showLogoutDelete: true,
                     showTestAccounts: false,
                     showLegal: true,
                     showLegalSectionLabel: false,
@@ -237,7 +223,7 @@ class _SettingsTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             if (leading != null) ...[
-              Icon(leading, color: AppColors.primary, size: 24),
+              Icon(leading, color: AppColors.textPrimary, size: 24),
               const SizedBox(width: 12),
             ],
             Expanded(
@@ -318,6 +304,12 @@ class _TextInputDialogState extends State<_TextInputDialog> {
       content: TextField(
         controller: _controller,
         autofocus: true,
+        autocorrect: false,
+        enableSuggestions: false,
+        spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+        smartDashesType: SmartDashesType.disabled,
+        smartQuotesType: SmartQuotesType.disabled,
+        style: const TextStyle(decoration: TextDecoration.none),
         decoration: InputDecoration(
           labelText: widget.label,
           hintText: widget.hint,
@@ -352,14 +344,29 @@ class _LocationRadiusSheetState extends State<_LocationRadiusSheet> {
   static const _radii = [50.0, 100.0, 150.0, 200.0];
 
   late final TextEditingController _addressController;
+  late final KakaoLocalApi _kakaoApi;
+  final _saveGuard = AsyncActionGuard(
+    cooldown: const Duration(milliseconds: 600),
+  );
+  final _postcodeGuard = AsyncActionGuard(
+    cooldown: const Duration(milliseconds: 500),
+  );
+
+  late String _displayAddress;
+  late double _latitude;
+  late double _longitude;
   late double _radius;
+  bool _resolving = false;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _addressController = TextEditingController(
-      text: widget.room.location.address ?? '',
-    );
+    _kakaoApi = KakaoLocalApi();
+    _displayAddress = widget.room.location.address?.trim() ?? '';
+    _addressController = TextEditingController(text: _displayAddress);
+    _latitude = widget.room.location.latitude;
+    _longitude = widget.room.location.longitude;
     _radius = widget.room.geofenceRadiusMeters;
     if (!_radii.contains(_radius)) {
       _radius = 100;
@@ -368,37 +375,109 @@ class _LocationRadiusSheetState extends State<_LocationRadiusSheet> {
 
   @override
   void dispose() {
+    _kakaoApi.dispose();
     _addressController.dispose();
     super.dispose();
   }
 
-  void _save() {
-    try {
-      MockStore.instance.updateRoomLocationSettings(
-        roomId: widget.room.id,
-        address: _addressController.text.trim(),
-        geofenceRadiusMeters: _radius,
-      );
-      Navigator.pop(context);
+  Future<void> _openPostcodeSearch() async {
+    await _postcodeGuard.run(() async {
+      final result = await showDaumPostcodeSheet(context);
+      if (!mounted || result == null) return;
+      setState(() {
+        _resolving = true;
+        _displayAddress = result.displayLabel;
+        _addressController.text = result.displayLabel;
+      });
+      try {
+        final lat = result.latitude;
+        final lng = result.longitude;
+        if (lat != null && lng != null) {
+          if (!mounted) return;
+          setState(() {
+            _latitude = lat;
+            _longitude = lng;
+          });
+        } else {
+          final place = await _geocode(result.geocodeQuery);
+          if (!mounted) return;
+          if (place != null) {
+            setState(() {
+              _latitude = place.latitude;
+              _longitude = place.longitude;
+            });
+          }
+        }
+      } catch (_) {
+        // 좌표 실패해도 주소 문자열은 유지
+      } finally {
+        if (mounted) setState(() => _resolving = false);
+      }
+    });
+  }
+
+  Future<KakaoPlaceResult?> _geocode(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return null;
+    var results = await _kakaoApi.searchAddress(trimmed);
+    if (results.isEmpty) {
+      results = await _kakaoApi.searchKeyword(trimmed);
+    }
+    if (results.isEmpty) return null;
+    return results.first;
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final address = _addressController.text.trim();
+    if (address.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('위치·반경을 저장했습니다.'),
+          content: Text('주소 검색으로 매장 주소를 선택해 주세요.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      return;
     }
+
+    await _saveGuard.run(() async {
+      if (!mounted) return;
+      setState(() => _saving = true);
+      try {
+        MockStore.instance.updateRoomLocationSettings(
+          roomId: widget.room.id,
+          address: address,
+          latitude: _latitude,
+          longitude: _longitude,
+          geofenceRadiusMeters: _radius,
+        );
+        if (!mounted) return;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('위치·반경을 저장했습니다.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } finally {
+        if (mounted) setState(() => _saving = false);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    final textTheme = Theme.of(context).textTheme;
+    final busy = _resolving || _saving;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottom),
@@ -419,32 +498,68 @@ class _LocationRadiusSheetState extends State<_LocationRadiusSheet> {
           const SizedBox(height: 16),
           Text(
             '매장 위치 · 출퇴근 반경',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+            style: textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             '직원이 이 반경 안에서만 출퇴근할 수 있어요.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+            style: textTheme.bodySmall?.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '매장 주소',
+                  style: textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: busy ? null : _openPostcodeSearch,
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('주소 검색'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
           TextField(
             controller: _addressController,
-            decoration: const InputDecoration(
-              labelText: '매장 주소',
-              hintText: '도로명 또는 건물명',
+            readOnly: true,
+            showCursor: false,
+            enableInteractiveSelection: false,
+            style: const TextStyle(
+              decoration: TextDecoration.none,
+              color: AppColors.textPrimary,
+            ),
+            decoration: InputDecoration(
+              hintText: _displayAddress.isEmpty
+                  ? '주소 검색으로 선택하세요'
+                  : null,
             ),
             maxLines: 2,
+            onTap: busy ? null : _openPostcodeSearch,
           ),
+          if (_resolving) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(minHeight: 2),
+          ],
           const SizedBox(height: 16),
           Text(
             '출퇴근 허용 반경',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+            style: textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 10),
           Row(
@@ -456,7 +571,7 @@ class _LocationRadiusSheetState extends State<_LocationRadiusSheet> {
                     label: '${r.toStringAsFixed(0)}m',
                     selected: _radius == r,
                     expand: true,
-                    onTap: () => setState(() => _radius = r),
+                    onTap: busy ? null : () => setState(() => _radius = r),
                   ),
                 ),
               ],
@@ -466,12 +581,18 @@ class _LocationRadiusSheetState extends State<_LocationRadiusSheet> {
           SizedBox(
             height: 52,
             child: OutlinedButton(
-              onPressed: _save,
+              onPressed: busy ? null : _save,
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primary,
                 side: const BorderSide(color: AppColors.border),
               ),
-              child: const Text('저장'),
+              child: _saving
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    )
+                  : const Text('저장'),
             ),
           ),
         ],

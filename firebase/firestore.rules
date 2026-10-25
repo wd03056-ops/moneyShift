@@ -115,6 +115,26 @@ service cloud.firestore {
       allow delete: if isRoomManager(resource.data.roomId);
     }
 
+    // 초대 코드 전역 유일 인덱스 (문서 ID = code)
+    // 사장만 발급 — 타 매장·기본/커스텀 코드 스쿼팅 방지
+    match /invite_codes/{code} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && isRoomManager(request.resource.data.roomId)
+        && request.resource.data.keys().hasAll(['code', 'roomId', 'inviteId'])
+        && request.resource.data.code == code;
+      allow update, delete: if false;
+    }
+
+    match /rooms/{roomId}/custom_roles/{roleId} {
+      allow read: if isSignedIn()
+        && (isRoomMember(roomId) || isDevTestId(roomId));
+      allow create, update: if isRoomManager(roomId)
+        || (isSignedIn() && isDevTestId(roomId));
+      allow delete: if isRoomManager(roomId)
+        || (isSignedIn() && isDevTestId(roomId));
+    }
+
     match /schedules/{scheduleId} {
       allow read: if isRoomMember(resource.data.roomId)
         || isDevTestId(resource.data.roomId)

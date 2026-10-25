@@ -26,6 +26,12 @@ class RoomRepository {
   CollectionReference<Map<String, dynamic>> get _members =>
       _db.collection(FirestorePaths.roomMembers);
 
+  CollectionReference<Map<String, dynamic>> get _inviteCodes =>
+      _db.collection(FirestorePaths.inviteCodes);
+
+  CollectionReference<Map<String, dynamic>> _customRoles(String roomId) =>
+      _db.collection(FirestorePaths.roomCustomRoles(roomId));
+
   CollectionReference<Map<String, dynamic>> get _invites =>
       _db.collection(FirestorePaths.roomInvites);
 
@@ -147,30 +153,310 @@ class RoomRepository {
   // ---------------------------------------------------------------------------
 
   /// 직책([role])을 먼저 선택한 뒤 초대 코드/링크를 생성합니다.
+  ///
+  /// - 기본 직책: 문서 ID = `{roomId}_default_{role}` (방·직책당 단건)
+  /// - 커스텀: 랜덤 문서 ID
+  /// - `invite_codes/{code}` 트랜잭션으로 전역 유일성 보장 + 충돌 시 재시도
   Future<RoomInviteModel> createInvite({
     required String roomId,
     required MemberRole role,
     int? maxUses,
     Duration? validFor,
+    String? customRoleName,
+    String? customRoleId,
   }) async {
     final uid = _uid;
     await _ensureCanInvite(roomId, uid);
 
-    final code = await _generateUniqueInviteCode();
-    final inviteRef = _invites.doc();
-    final invite = RoomInviteModel(
-      id: inviteRef.id,
-      roomId: roomId,
-      code: code,
-      role: role,
-      createdBy: uid,
-      maxUses: maxUses,
-      expiresAt: validFor != null ? DateTime.now().add(validFor) : null,
+    final isDefaultRoleInvite = customRoleId == null;
+    final inviteRef = isDefaultRoleInvite
+        ? _invites.doc(
+            FirestorePaths.defaultRoleInviteDocId(
+              roomId,
+              role.firestoreValue,
+            ),
+          )
+        : _invites.doc();
+
+    for (var attempt = 0; attempt < 16; attempt++) {
+      // 기본 초대가 이미 사용 가능하면 재생성하지 않음 (중복 코드·문서 방지)
+      if (isDefaultRoleInvite) {
+        final existingSnap = await inviteRef.get();
+        if (existingSnap.exists) {
+          final existing = RoomInviteModel.fromFirestore(existingSnap);
+          if (existing.canBeUsed) return existing;
+        }
+      }
+
+      final code = await _generateUniqueInviteCode();
+      final invite = RoomInviteModel(
+        id: inviteRef.id,
+        roomId: roomId,
+        code: code,
+        role: role,
+        createdBy: uid,
+        customRoleName: customRoleName,
+        customRoleId: customRoleId,
+        maxUses: maxUses,
+        expiresAt: validFor != null ? DateTime.now().add(validFor) : null,
+      );
+
+      try {
+        RoomInviteModel? committed;
+        await _db.runTransaction((tx) async {
+          // 트랜잭션 내 재확인 — 동시 ensure 레이스 차단
+          if (isDefaultRoleInvite) {
+            final existingSnap = await tx.get(inviteRef);
+            if (existingSnap.exists) {
+              final existing = RoomInviteModel.fromFirestore(existingSnap);
+              if (existing.canBeUsed) {
+                committed = existing;
+                return;
+              }
+            }
+          }
+
+          final codeRef = _inviteCodes.doc(code);
+          final codeSnap = await tx.get(codeRef);
+          if (codeSnap.exists) {
+            throw StateError('invite_code_collision');
+          }
+          final codePayload = <String, dynamic>{
+            'code': code,
+            'roomId': roomId,
+            'inviteId': inviteRef.id,
+            'createdAt': FieldValue.serverTimestamp(),
+          };
+          if (customRoleId != null) {
+            codePayload['customRoleId'] = customRoleId;
+          }
+          tx.set(codeRef, codePayload);
+          tx.set(inviteRef, invite.toFirestore(forCreate: true));
+          committed = invite;
+        });
+        final result = committed;
+        if (result != null) return result;
+      } on StateError catch (e) {
+        if (e.message == 'invite_code_collision') continue;
+        rethrow;
+      }
+    }
+
+    throw StateError('초대 코드 생성에 실패했습니다. 다시 시도해주세요.');
+  }
+
+  /// 커스텀 직책 등록 + 전역 유일 초대 코드 발급
+  ///
+  /// `invite_codes` · `room_invites` · `custom_roles`(+ 직책명 락) 를
+  /// 한 트랜잭션에 기록해 부분 실패·코드/이름 중복을 막습니다.
+  Future<RoomCustomRoleModel> createCustomRoleWithInvite({
+    required String roomId,
+    required String roleName,
+    MemberRole baseRole = MemberRole.staff,
+    Duration validFor = const Duration(days: 365),
+  }) async {
+    final uid = _uid;
+    await _ensureCanInvite(roomId, uid);
+
+    final name = roleName.trim();
+    if (name.length < 2) {
+      throw ArgumentError('직책명은 2자 이상이어야 합니다.');
+    }
+    if (name.length > 20) {
+      throw ArgumentError('직책명은 20자 이하여야 합니다.');
+    }
+    if (!MemberRole.invitableRoles.contains(baseRole)) {
+      throw ArgumentError('권한 기준 직책이 올바르지 않습니다.');
+    }
+
+    final nameLower = name.toLowerCase();
+    final nameLockRef = _customRoles(roomId).doc(
+      FirestorePaths.customRoleNameLockDocId(nameLower),
     );
 
-    await inviteRef.set(invite.toFirestore(forCreate: true));
-    return invite;
+    // 방 내 직책명 중복 (사전 검사 + 트랜잭션 락으로 이중 방어)
+    final existingNames = await _customRoles(roomId)
+        .where('isActive', isEqualTo: true)
+        .limit(FirestoreQueryLimits.list)
+        .get();
+    for (final doc in existingNames.docs) {
+      final n = (doc.data()['name'] as String? ?? '').trim().toLowerCase();
+      if (n == nameLower) {
+        throw StateError('이미 같은 이름의 직책이 있습니다.');
+      }
+    }
+    final lockPre = await nameLockRef.get();
+    if (lockPre.exists) {
+      throw StateError('이미 같은 이름의 직책이 있습니다.');
+    }
+
+    final roleRef = _customRoles(roomId).doc();
+    final inviteRef = _invites.doc();
+
+    // 전역 유일 코드 확보 후 트랜잭션으로 원자 기록
+    for (var attempt = 0; attempt < 16; attempt++) {
+      final code = await _generateUniqueInviteCode();
+      final invite = RoomInviteModel(
+        id: inviteRef.id,
+        roomId: roomId,
+        code: code,
+        role: baseRole,
+        createdBy: uid,
+        customRoleName: name,
+        customRoleId: roleRef.id,
+        expiresAt: DateTime.now().add(validFor),
+      );
+      final custom = RoomCustomRoleModel(
+        id: roleRef.id,
+        roomId: roomId,
+        name: name,
+        baseRole: baseRole,
+        inviteCode: code,
+        inviteId: inviteRef.id,
+        createdBy: uid,
+      );
+
+      try {
+        await _db.runTransaction((tx) async {
+          final lockSnap = await tx.get(nameLockRef);
+          if (lockSnap.exists) {
+            throw StateError('이미 같은 이름의 직책이 있습니다.');
+          }
+
+          final codeRef = _inviteCodes.doc(code);
+          final codeSnap = await tx.get(codeRef);
+          if (codeSnap.exists) {
+            throw StateError('invite_code_collision');
+          }
+          tx.set(codeRef, {
+            'code': code,
+            'roomId': roomId,
+            'inviteId': inviteRef.id,
+            'customRoleId': roleRef.id,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          tx.set(inviteRef, invite.toFirestore(forCreate: true));
+          tx.set(roleRef, custom.toFirestore(forCreate: true));
+          // isActive 없음 → 활성 직책 목록 쿼리에서 제외
+          tx.set(nameLockRef, {
+            'roleId': roleRef.id,
+            'name': name,
+            'isNameLock': true,
+          });
+        });
+        return custom.copyWith(createdAt: DateTime.now());
+      } on StateError catch (e) {
+        if (e.message == 'invite_code_collision') continue;
+        rethrow;
+      }
+    }
+
+    throw StateError('초대 코드 생성에 실패했습니다. 다시 시도해주세요.');
   }
+
+  Future<RoomInviteModel?> getInvite(String inviteId) async {
+    final snap = await _invites.doc(inviteId).get();
+    if (!snap.exists) return null;
+    return RoomInviteModel.fromFirestore(snap);
+  }
+
+  Future<List<RoomCustomRoleModel>> listCustomRoles(String roomId) async {
+    await _ensureCanInvite(roomId, _uid);
+    final snap = await _customRoles(roomId)
+        .where('isActive', isEqualTo: true)
+        .limit(FirestoreQueryLimits.list)
+        .get();
+    final list = snap.docs
+        .where((d) => d.data()['isNameLock'] != true)
+        .map(RoomCustomRoleModel.fromFirestore)
+        .toList();
+    list.sort(
+      (a, b) => (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)),
+    );
+    return list;
+  }
+
+  /// 커스텀 직책 삭제
+  ///
+  /// - `custom_roles` 문서 삭제
+  /// - 연결된 `room_invites` 즉시 무효화 (`isActive: false`)
+  /// - 해당 직책 부여 멤버는 [role](권한) 유지 + `customRoleName`/`customRoleId` 제거
+  Future<void> deleteCustomRole({
+    required String roomId,
+    required String roleId,
+  }) async {
+    final uid = _uid;
+    await _ensureCanInvite(roomId, uid);
+
+    final roleRef = _customRoles(roomId).doc(roleId);
+    final snap = await roleRef.get();
+    if (!snap.exists) return;
+    final role = RoomCustomRoleModel.fromFirestore(snap);
+
+    final membersSnap = await _members
+        .where('roomId', isEqualTo: roomId)
+        .where('isActive', isEqualTo: true)
+        .limit(FirestoreQueryLimits.batchPage)
+        .get();
+
+    final roleName = role.name.trim();
+    final affected = membersSnap.docs.where((doc) {
+      final data = doc.data();
+      final id = data['customRoleId'] as String?;
+      if (id != null && id == roleId) return true;
+      final name = (data['customRoleName'] as String?)?.trim();
+      return name != null &&
+          name.isNotEmpty &&
+          name.toLowerCase() == roleName.toLowerCase();
+    }).toList();
+
+    // Firestore batch 한도(500) 여유 — 직책/초대 + 멤버
+    const maxOps = 450;
+    var batch = _db.batch();
+    var opCount = 0;
+
+    Future<void> commitIfNeeded({required bool force}) async {
+      if (opCount == 0) return;
+      if (!force && opCount < maxOps) return;
+      await batch.commit();
+      batch = _db.batch();
+      opCount = 0;
+    }
+
+    batch.delete(roleRef);
+    opCount++;
+
+    final nameLockRef = _customRoles(roomId).doc(
+      FirestorePaths.customRoleNameLockDocId(roleName.toLowerCase()),
+    );
+    batch.delete(nameLockRef);
+    opCount++;
+
+    final inviteRef = _invites.doc(role.inviteId);
+    final inviteSnap = await inviteRef.get();
+    if (inviteSnap.exists) {
+      batch.update(inviteRef, {'isActive': false});
+      opCount++;
+    }
+
+    for (final doc in affected) {
+      await commitIfNeeded(force: false);
+      // 권한(role)은 baseRole 그대로 — 표시용 커스텀 필드만 제거
+      batch.update(doc.reference, {
+        'customRoleName': FieldValue.delete(),
+        'customRoleId': FieldValue.delete(),
+      });
+      opCount++;
+    }
+    await commitIfNeeded(force: true);
+  }
+
+  /// [deleteCustomRole] 별칭 (기존 호출 호환)
+  Future<void> deactivateCustomRole({
+    required String roomId,
+    required String roleId,
+  }) =>
+      deleteCustomRole(roomId: roomId, roleId: roleId);
 
   Future<void> revokeInvite(String inviteId) async {
     final uid = _uid;
@@ -196,34 +482,99 @@ class RoomRepository {
     return snap.docs.map(RoomInviteModel.fromFirestore).toList();
   }
 
+  /// 기본 직책(커스텀 제외) 활성 초대 1건
+  Future<RoomInviteModel?> activeInviteForRole({
+    required String roomId,
+    required MemberRole role,
+  }) async {
+    final list = await listActiveInvites(roomId);
+    for (final invite in list) {
+      if (invite.role == role &&
+          invite.customRoleId == null &&
+          invite.canBeUsed) {
+        return invite;
+      }
+    }
+    return null;
+  }
+
+  /// 기본 직책 초대가 없으면 생성 (전역 유일 코드 · 문서 ID 단건)
+  Future<RoomInviteModel> ensureInviteForRole({
+    required String roomId,
+    required MemberRole role,
+    Duration validFor = const Duration(days: 365),
+  }) async {
+    if (!MemberRole.invitableRoles.contains(role)) {
+      throw ArgumentError('초대 불가 직책입니다.');
+    }
+
+    // 1) 결정적 문서 ID로 단건 조회 (중복 생성 방지의 1차 방어)
+    final docId = FirestorePaths.defaultRoleInviteDocId(
+      roomId,
+      role.firestoreValue,
+    );
+    final byId = await _invites.doc(docId).get();
+    if (byId.exists) {
+      final invite = RoomInviteModel.fromFirestore(byId);
+      if (invite.canBeUsed) return invite;
+    }
+
+    // 2) 레거시(랜덤 ID) 활성 초대가 있으면 재사용
+    final legacy = await activeInviteForRole(roomId: roomId, role: role);
+    if (legacy != null) return legacy;
+
+    return createInvite(
+      roomId: roomId,
+      role: role,
+      validFor: validFor,
+    );
+  }
+
+  /// 매니저·직원·알바 기본 초대 코드 일괄 확보
+  Future<Map<MemberRole, RoomInviteModel>> ensureDefaultRoleInvites({
+    required String roomId,
+    Duration validFor = const Duration(days: 365),
+  }) async {
+    final out = <MemberRole, RoomInviteModel>{};
+    for (final role in MemberRole.invitableRoles) {
+      out[role] = await ensureInviteForRole(
+        roomId: roomId,
+        role: role,
+        validFor: validFor,
+      );
+    }
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   // 초대 코드로 방 참여 (직책 자동 적용)
   // ---------------------------------------------------------------------------
 
-  /// 초대 코드로 가입 — 사장이 지정한 [RoomInviteModel.role]로 멤버 등록
+  /// 초대 코드 1개로 가입 — 코드에 묶인 직책(기본/커스텀)으로 멤버 등록
   ///
-  /// Firestore `room_members` 생성 → Cloud Functions `onRoomMemberCreated`
-  /// 가 사장에게 직원 등록 알림을 보냅니다.
+  /// 1) `invite_codes/{code}` 로 전역 조회 → 2) `room_invites` 의 role /
+  /// customRoleName 적용 → 3) `room_members` 생성.
+  /// Cloud Functions `onRoomMemberCreated` 가 사장에게 직원 등록 알림을 보냅니다.
   Future<RoomMemberModel> joinRoomWithInviteCode(String rawCode) async {
     final uid = _uid;
-    final code = rawCode.trim().toUpperCase();
+    final code = rawCode.trim();
     if (code.isEmpty) {
       throw const InviteInvalidException('초대 코드를 입력해주세요.');
     }
-
-    final inviteQuery = await _invites
-        .where('code', isEqualTo: code)
-        .where('isActive', isEqualTo: true)
-        .limit(1)
-        .get();
-
-    if (inviteQuery.docs.isEmpty) {
-      throw const InviteInvalidException();
+    if (!_isNumericInviteCode(code)) {
+      throw const InviteInvalidException('초대 코드는 숫자만 입력할 수 있습니다.');
     }
 
-    final inviteDoc = inviteQuery.docs.first;
-    final invite = RoomInviteModel.fromFirestore(inviteDoc);
-
+    final inviteRef = await _resolveInviteRefByCode(code);
+    final inviteSnap = await inviteRef.get();
+    if (!inviteSnap.exists) {
+      throw const InviteInvalidException('존재하지 않거나 잘못된 초대 코드입니다.');
+    }
+    final invite = RoomInviteModel.fromFirestore(inviteSnap);
+    // 재발급 후 남은 옛 invite_codes 인덱스 차단 (문서 코드와 불일치)
+    if (invite.code != code) {
+      throw const InviteInvalidException('존재하지 않거나 잘못된 초대 코드입니다.');
+    }
     if (!invite.canBeUsed) {
       throw const InviteInvalidException('만료되었거나 사용이 끝난 초대입니다.');
     }
@@ -246,12 +597,19 @@ class RoomRepository {
       if (!roomSnap.exists) {
         throw const RoomNotFoundException();
       }
-
-      final inviteSnap = await tx.get(inviteDoc.reference);
-      if (!inviteSnap.exists) {
-        throw const InviteInvalidException();
+      final ownerId = roomSnap.data()?['ownerId'] as String?;
+      if (ownerId == uid) {
+        throw const AlreadyRoomMemberException('내가 만든 방입니다.');
       }
-      final liveInvite = RoomInviteModel.fromFirestore(inviteSnap);
+
+      final liveInviteSnap = await tx.get(inviteRef);
+      if (!liveInviteSnap.exists) {
+        throw const InviteInvalidException('존재하지 않거나 잘못된 초대 코드입니다.');
+      }
+      final liveInvite = RoomInviteModel.fromFirestore(liveInviteSnap);
+      if (liveInvite.code != code) {
+        throw const InviteInvalidException('존재하지 않거나 잘못된 초대 코드입니다.');
+      }
       if (!liveInvite.canBeUsed) {
         throw const InviteInvalidException('만료되었거나 사용이 끝난 초대입니다.');
       }
@@ -259,39 +617,73 @@ class RoomRepository {
       joined = RoomMemberModel(
         roomId: invite.roomId,
         userId: uid,
-        // 핵심: 초대에 매핑된 직책 그대로 등록 (알바생 선택 없음)
+        // 기본 직책(매니저/직원/알바) 또는 커스텀 직책의 baseRole + 표시명
         role: liveInvite.role,
         displayName: _displayName,
+        customRoleName: liveInvite.customRoleName,
+        customRoleId: liveInvite.customRoleId,
+        isActive: true,
       );
 
-      if (existingMember.exists) {
-        tx.update(memberRef, {
-          ...joined.toFirestore(),
-          'joinedAt': FieldValue.serverTimestamp(),
-        });
-      } else {
-        tx.set(memberRef, joined.toFirestore(forCreate: true));
+      // 이 방 멤버 문서만 전체 교체 — 이전 계약/직책 잔존·타 방 데이터 유입 방지
+      final payload = <String, dynamic>{
+        ...joined.toFirestore(forCreate: true),
+        'isActive': true,
+        'joinedAt': FieldValue.serverTimestamp(),
+      };
+      if (liveInvite.customRoleName == null) {
+        payload['customRoleName'] = FieldValue.delete();
       }
+      if (liveInvite.customRoleId == null) {
+        payload['customRoleId'] = FieldValue.delete();
+      }
+      tx.set(memberRef, payload);
 
-      final memberCount = roomSnap.data()?['memberCount'] as int? ?? 0;
       final wasInactive = existingMember.exists &&
           !(existingMember.data()?['isActive'] as bool? ?? false);
       final shouldIncrementCount = !existingMember.exists || wasInactive;
+      // increment 로 동시 가입 시 카운트 꼬임 완화 (트랜잭션 내)
       tx.update(roomRef, {
-        'memberCount':
-            memberCount + (shouldIncrementCount ? 1 : 0),
+        if (shouldIncrementCount)
+          'memberCount': FieldValue.increment(1),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       final nextUsed = liveInvite.usedCount + 1;
-      tx.update(inviteDoc.reference, {
-        'usedCount': nextUsed,
+      tx.update(inviteRef, {
+        'usedCount': FieldValue.increment(1),
         if (liveInvite.maxUses != null && nextUsed >= liveInvite.maxUses!)
           'isActive': false,
       });
     });
 
     return joined;
+  }
+
+  /// `invite_codes` 우선, 없으면 `room_invites` 쿼리 (레거시 호환)
+  Future<DocumentReference<Map<String, dynamic>>> _resolveInviteRefByCode(
+    String code,
+  ) async {
+    final reserved = await _inviteCodes.doc(code).get();
+    if (reserved.exists) {
+      final inviteId = reserved.data()?['inviteId'] as String?;
+      if (inviteId == null || inviteId.isEmpty) {
+        throw const InviteInvalidException('존재하지 않거나 잘못된 초대 코드입니다.');
+      }
+      return _invites.doc(inviteId);
+    }
+
+    final inviteQuery = await _invites
+        .where('code', isEqualTo: code)
+        .limit(2)
+        .get();
+    if (inviteQuery.docs.isEmpty) {
+      throw const InviteInvalidException('존재하지 않거나 잘못된 초대 코드입니다.');
+    }
+    if (inviteQuery.docs.length > 1) {
+      throw const InviteInvalidException('초대 코드가 올바르지 않습니다.');
+    }
+    return inviteQuery.docs.first.reference;
   }
 
   // ---------------------------------------------------------------------------
@@ -416,16 +808,14 @@ class RoomRepository {
     await _db.runTransaction((tx) async {
       final memberSnap = await tx.get(memberRef);
       if (!memberSnap.exists) return;
+      final wasActive = memberSnap.data()?['isActive'] as bool? ?? false;
+      if (!wasActive) return;
 
-      final roomSnap = await tx.get(roomRef);
       tx.update(memberRef, {'isActive': false});
-      if (roomSnap.exists) {
-        final count = roomSnap.data()?['memberCount'] as int? ?? 1;
-        tx.update(roomRef, {
-          'memberCount': count > 0 ? count - 1 : 0,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      }
+      tx.update(roomRef, {
+        'memberCount': FieldValue.increment(-1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 
@@ -449,7 +839,9 @@ class RoomRepository {
     }
   }
 
-  /// 전역 유일 숫자 코드 — 매장·직책과 무관하게 코드 하나 = 방 하나
+  /// 전역 유일 숫자 코드 — `invite_codes` 문서 ID + `room_invites.code` 이중 검사
+  ///
+  /// 비활성·만료 초대에 쓰인 코드도 재사용하지 않음 (전역 예약 유지).
   Future<String> _generateUniqueInviteCode({int length = 8}) async {
     final random = Random.secure();
 
@@ -459,13 +851,28 @@ class RoomRepository {
         (_) => random.nextInt(10).toString(),
       ).join();
 
+      // 1) 전역 인덱스 (문서 ID = code) — O(1)
+      final reserved = await _inviteCodes.doc(code).get();
+      if (reserved.exists) continue;
+
+      // 2) 레거시/누락 인덱스 대비 room_invites 전체(활성·비활성) 조회
       final existing = await _invites
           .where('code', isEqualTo: code)
           .limit(1)
           .get();
-      if (existing.docs.isEmpty) return code;
+      if (existing.docs.isNotEmpty) continue;
+
+      return code;
     }
 
     throw StateError('초대 코드 생성에 실패했습니다. 다시 시도해주세요.');
+  }
+
+  static bool _isNumericInviteCode(String code) {
+    if (code.isEmpty) return false;
+    for (final c in code.codeUnits) {
+      if (c < 0x30 || c > 0x39) return false;
+    }
+    return true;
   }
 }

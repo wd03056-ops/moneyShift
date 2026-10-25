@@ -16,12 +16,11 @@ class AppConstants {
   static const String supportEmail = 'support@moneyshift.app';
   static const String developerName = 'Money Shift';
 
-  /// 호스팅된 개인정보처리방침 URL (Play Console 제출 시 필수)
-  /// 앱 내 전문과 동일 내용을 웹에 게시 후 URL을 교체하세요.
+  /// 호스팅된 개인정보처리방침·이용약관 (Notion · Play Console 제출용)
   static const String privacyPolicyUrl =
-      'https://moneyshift.app/privacy';
+      'https://giddy-gaura-998.notion.site/Privacy-Policy-401ad28bec5c80369f2bcac4f2652099';
   static const String termsOfServiceUrl =
-      'https://moneyshift.app/terms';
+      'https://giddy-gaura-998.notion.site/Terms-Conditions-401ad28bec5c8067b331cf4858ed20ac';
 
   /// 초대·앱링크 호스트 (웹 랜딩 + Android App Links / iOS Universal Links)
   static const String appLinkHost = 'moneyshift.app';

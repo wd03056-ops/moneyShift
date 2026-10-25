@@ -235,23 +235,26 @@ class NotificationDeepLink {
   }
 
   /// 역할에 따른 RoomDetail 탭 인덱스 (없으면 null → 기본 탭)
+  ///
+  /// 사장: 0직원목록 · 1근무표 · 2초대하기 · 3설정
+  /// 직원: 0출퇴근 · 1내근무표 · 2내정보
   static int? tabIndexFor({
     required String targetRoute,
     required bool isOwner,
   }) {
     switch (pathOnly(targetRoute)) {
       case NotificationRoutes.employees:
-        return isOwner ? 0 : 0;
+        return 0;
       case NotificationRoutes.schedule:
-        return isOwner ? 1 : 1;
+        return 1;
       case NotificationRoutes.assignedSchedule:
         return isOwner ? 1 : 0;
       case NotificationRoutes.scheduleChange:
-        return isOwner ? 1 : 1;
+        return 1;
       case NotificationRoutes.substituteAccept:
         return isOwner ? 1 : 0;
       case NotificationRoutes.substituteApprove:
-        return isOwner ? 1 : 1;
+        return 1;
       case NotificationRoutes.commuteHistory:
         // 사장은 전용 OwnerCommuteDashboardScreen 으로 푸시 (탭 인덱스 미사용)
         return isOwner ? null : 0;

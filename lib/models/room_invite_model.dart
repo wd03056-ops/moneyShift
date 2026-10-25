@@ -16,6 +16,8 @@ class RoomInviteModel extends Equatable {
     required this.code,
     required this.role,
     required this.createdBy,
+    this.customRoleName,
+    this.customRoleId,
     this.isActive = true,
     this.usedCount = 0,
     this.maxUses,
@@ -26,11 +28,17 @@ class RoomInviteModel extends Equatable {
   final String id;
   final String roomId;
 
-  /// 공유용 초대 코드 (대문자·숫자)
+  /// 공유용 초대 코드 (숫자 8자리 · 전역 유일)
   final String code;
 
-  /// 초대에 고정된 직책 — 가입 시 그대로 적용
+  /// 권한용 직책 — 가입 시 `room_members.role` 에 적용
   final MemberRole role;
+
+  /// 커스텀 직책 표시명 (있으면 UI는 이 이름 사용)
+  final String? customRoleName;
+
+  /// `rooms/{roomId}/custom_roles/{id}` 참조
+  final String? customRoleId;
 
   final String createdBy;
   final bool isActive;
@@ -40,6 +48,13 @@ class RoomInviteModel extends Equatable {
   final int? maxUses;
   final DateTime? expiresAt;
   final DateTime? createdAt;
+
+  /// UI 표시용 — 커스텀명 우선
+  String get roleLabel {
+    final custom = customRoleName?.trim();
+    if (custom != null && custom.isNotEmpty) return custom;
+    return role.labelKo;
+  }
 
   /// 공유용 HTTPS 앱링크 (미설치 시 웹→스토어, 설치 시 앱 실행)
   String get inviteLink => InviteLink.buildHttps(code);
@@ -75,6 +90,8 @@ class RoomInviteModel extends Equatable {
       code: map['code'] as String? ?? '',
       role: MemberRole.fromFirestore(map['role'] as String? ?? 'parttime'),
       createdBy: map['createdBy'] as String? ?? '',
+      customRoleName: map['customRoleName'] as String?,
+      customRoleId: map['customRoleId'] as String?,
       isActive: map['isActive'] as bool? ?? true,
       usedCount: map['usedCount'] as int? ?? 0,
       maxUses: map['maxUses'] as int?,
@@ -89,6 +106,8 @@ class RoomInviteModel extends Equatable {
       'code': code,
       'role': role.firestoreValue,
       'createdBy': createdBy,
+      if (customRoleName != null) 'customRoleName': customRoleName,
+      if (customRoleId != null) 'customRoleId': customRoleId,
       'isActive': isActive,
       'usedCount': usedCount,
       if (maxUses != null) 'maxUses': maxUses,
@@ -103,6 +122,8 @@ class RoomInviteModel extends Equatable {
     String? code,
     MemberRole? role,
     String? createdBy,
+    String? customRoleName,
+    String? customRoleId,
     bool? isActive,
     int? usedCount,
     int? maxUses,
@@ -115,6 +136,8 @@ class RoomInviteModel extends Equatable {
       code: code ?? this.code,
       role: role ?? this.role,
       createdBy: createdBy ?? this.createdBy,
+      customRoleName: customRoleName ?? this.customRoleName,
+      customRoleId: customRoleId ?? this.customRoleId,
       isActive: isActive ?? this.isActive,
       usedCount: usedCount ?? this.usedCount,
       maxUses: maxUses ?? this.maxUses,
@@ -135,6 +158,8 @@ class RoomInviteModel extends Equatable {
         roomId,
         code,
         role,
+        customRoleName,
+        customRoleId,
         createdBy,
         isActive,
         usedCount,

@@ -169,7 +169,7 @@ class NotificationService {
       body: NotificationTemplates.staffJoinedBody(staffDisplayName),
       storeId: storeId,
       data: {
-        if (memberId != null) 'memberId': memberId,
+        'memberId': ?memberId,
       },
     );
   }

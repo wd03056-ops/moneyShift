@@ -24,7 +24,7 @@ class MockFirestoreSeedService {
   static const _demoLocation = GeoLocation(
     latitude: 37.5665,
     longitude: 126.9780,
-    address: '서울특별시 중구 (테스트 매장)',
+    address: '서울특별시 중구 세종대로 110 (서울특별시청)',
   );
 
   Future<void> ensureDemoData({required String ownerUid}) async {

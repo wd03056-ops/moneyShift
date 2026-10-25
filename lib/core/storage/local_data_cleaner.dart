@@ -5,6 +5,7 @@ import '../../features/notifications/data/mock_notification_repository.dart';
 import '../../features/notifications/data/notification_preference_store.dart';
 import '../../features/notifications/domain/notification_dedupe.dart';
 import '../deeplink/invite_deep_link_service.dart';
+import 'dashboard_pay_view_store.dart';
 import 'secure_session_storage.dart';
 
 /// 탈퇴·로그아웃 시 기기 로컬 데이터 정리
@@ -45,6 +46,7 @@ abstract final class LocalDataCleaner {
     } catch (_) {}
 
     NotificationPreferenceStore.instance.clearMemoryCache();
+    DashboardPayViewStore.instance.clearMemoryCache();
     NotificationDedupe.clear();
 
     if (userId != null && userId.isNotEmpty) {

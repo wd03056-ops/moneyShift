@@ -27,12 +27,16 @@ class OwnerScheduleTab extends StatefulWidget {
     super.key,
     required this.room,
     this.calendarView = false,
+    this.onCalendarViewChanged,
   });
 
   final RoomModel room;
 
   /// true면 달력 뷰, false면 배정·승인 리스트 뷰
   final bool calendarView;
+
+  /// 제목 옆 리스트/달력 토글
+  final ValueChanged<bool>? onCalendarViewChanged;
 
   @override
   State<OwnerScheduleTab> createState() => _OwnerScheduleTabState();
@@ -55,6 +59,8 @@ class _OwnerScheduleTabState extends State<OwnerScheduleTab> {
   ) {
     final map = <String, List<ScheduleModel>>{};
     for (final s in schedules) {
+      // 방어: 타 방 스케줄이 섞여 들어오면 버림
+      if (s.roomId != roomId) continue;
       map.putIfAbsent(s.workerId, () => []).add(s);
     }
     for (final list in map.values) {
@@ -105,13 +111,23 @@ class _OwnerScheduleTabState extends State<OwnerScheduleTab> {
         ],
       ),
       body: calendarView
-          ? StoreCalendarTab(
-              room: room,
-              showHeader: false,
-              embedded: true,
-              onSelectedDayChanged: (day) {
-                _calendarSelectedDay = day;
-              },
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ScheduleTitleRow(
+                  calendarView: calendarView,
+                  onCalendarViewChanged: widget.onCalendarViewChanged,
+                ),
+                const SizedBox(height: 12),
+                StoreCalendarTab(
+                  room: room,
+                  showHeader: false,
+                  embedded: true,
+                  onSelectedDayChanged: (day) {
+                    _calendarSelectedDay = day;
+                  },
+                ),
+              ],
             )
           : ListenableBuilder(
               listenable: ScheduleStore.listenable,
@@ -129,9 +145,9 @@ class _OwnerScheduleTabState extends State<OwnerScheduleTab> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      '근무표',
-                      style: Theme.of(context).textTheme.titleLarge,
+                    _ScheduleTitleRow(
+                      calendarView: calendarView,
+                      onCalendarViewChanged: widget.onCalendarViewChanged,
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -212,6 +228,62 @@ class _OwnerScheduleTabState extends State<OwnerScheduleTab> {
                 );
               },
             ),
+    );
+  }
+}
+
+/// 근무표 제목 + 리스트/달력 뷰 토글
+class _ScheduleTitleRow extends StatelessWidget {
+  const _ScheduleTitleRow({
+    required this.calendarView,
+    this.onCalendarViewChanged,
+  });
+
+  final bool calendarView;
+  final ValueChanged<bool>? onCalendarViewChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Text(
+            '근무표',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+        IconButton(
+          tooltip: '리스트 뷰',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          onPressed: onCalendarViewChanged == null
+              ? null
+              : () => onCalendarViewChanged!(false),
+          icon: Icon(
+            Icons.view_list_rounded,
+            color: !calendarView
+                ? AppColors.primary
+                : AppColors.textSecondary,
+          ),
+        ),
+        IconButton(
+          tooltip: '달력 뷰',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          onPressed: onCalendarViewChanged == null
+              ? null
+              : () => onCalendarViewChanged!(true),
+          icon: Icon(
+            Icons.calendar_month_rounded,
+            color: calendarView
+                ? AppColors.primary
+                : AppColors.textSecondary,
+          ),
+        ),
+      ],
     );
   }
 }

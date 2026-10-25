@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/async/action_guard.dart';
 import '../../../core/calendar/snappy_calendar.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
@@ -14,6 +15,17 @@ Future<bool> showShiftSwapRequestSheet({
   required BuildContext context,
   required ScheduleModel schedule,
 }) async {
+  if (MockStore.instance.isScheduleClockedOut(schedule)) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('이미 퇴근한 근무는 대타 요청을 할 수 없습니다.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return false;
+  }
   final result = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
@@ -40,6 +52,7 @@ class _ShiftSwapRequestSheetState extends State<_ShiftSwapRequestSheet> {
   final _reasonCtrl = TextEditingController();
   String? _toWorkerId;
   bool _submitting = false;
+  final _submitGuard = ActionGuard(cooldown: Duration(milliseconds: 800));
 
   @override
   void dispose() {
@@ -58,6 +71,16 @@ class _ShiftSwapRequestSheetState extends State<_ShiftSwapRequestSheet> {
       );
       return;
     }
+    if (MockStore.instance.isScheduleClockedOut(widget.schedule)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('이미 퇴근한 근무는 대타 요청을 할 수 없습니다.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (_submitting || !_submitGuard.tryStart()) return;
     setState(() => _submitting = true);
     try {
       MockStore.instance.requestShiftSwap(
@@ -76,6 +99,7 @@ class _ShiftSwapRequestSheetState extends State<_ShiftSwapRequestSheet> {
         ),
       );
     } finally {
+      _submitGuard.end();
       if (mounted) setState(() => _submitting = false);
     }
   }
@@ -133,7 +157,7 @@ class _ShiftSwapRequestSheetState extends State<_ShiftSwapRequestSheet> {
               for (final m in staff)
                 AppPickerOption(
                   value: m.userId,
-                  label: '${m.displayName} · ${m.role.labelKo}',
+                  label: '${m.displayName} · ${m.roleLabel}',
                 ),
             ],
             onSelected: (v) => setState(() => _toWorkerId = v),

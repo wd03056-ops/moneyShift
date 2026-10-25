@@ -5,6 +5,7 @@ import '../../../core/navigation/app_navigation.dart';
 import '../../../core/navigation/app_route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/outlined_toggle.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
@@ -289,13 +290,23 @@ class _NoticeComposeScreenState extends State<_NoticeComposeScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('필독 공지'),
-              value: _important,
-              activeThumbColor: AppColors.success,
-              activeTrackColor: AppColors.success.withValues(alpha: 0.45),
-              onChanged: _saving ? null : (v) => setState(() => _important = v),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '필독 공지',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                OutlinedToggle(
+                  value: _important,
+                  onChanged: _saving
+                      ? null
+                      : (v) => setState(() => _important = v),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
             SizedBox(

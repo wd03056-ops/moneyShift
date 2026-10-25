@@ -88,6 +88,7 @@ app.get(['/api', '/', '/api/'], (_req, res) => {
       endpoints: {
         health: 'GET /api/health',
         authPing: 'GET /api/auth/ping',
+        authKakao: 'POST /api/auth/kakao',
         schedulesPing: 'GET /api/schedules/ping',
         laborCostMonthly: 'GET /api/labor-cost/monthly?roomId&year&month',
         accountDelete: 'DELETE /api/account',
@@ -109,6 +110,67 @@ app.get(['/api/auth/ping', '/auth/ping'], (_req, res) => {
     ok: true,
     area: 'auth',
     message: 'auth router ready',
+  });
+});
+
+/**
+ * 카카오 → Firebase Custom Token
+ * POST /api/auth/kakao
+ * body: { kakaoAccessToken, kakaoUserId? }
+ */
+app.post(['/api/auth/kakao', '/auth/kakao'], (req, res) => {
+  Promise.resolve(
+    (async () => {
+      try {
+        if (consumeOrReject(req, res, { windowMs: 60_000, max: 20 })) {
+          return;
+        }
+
+        // eslint-disable-next-line global-require
+        const { exchangeKakaoForFirebaseToken } = require('./lib/kakaoFirebaseAuth');
+        const body = req.body || {};
+        const bearer = (() => {
+          const h = req.headers.authorization;
+          if (typeof h !== 'string') return '';
+          const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+          return m ? m[1].trim() : '';
+        })();
+
+        const result = await exchangeKakaoForFirebaseToken({
+          kakaoAccessToken:
+            (typeof body.kakaoAccessToken === 'string' && body.kakaoAccessToken) ||
+            bearer,
+          kakaoUserId:
+            typeof body.kakaoUserId === 'string' ? body.kakaoUserId : undefined,
+        });
+
+        if (!result.ok) {
+          return res.status(result.status || 400).json({
+            ok: false,
+            error: result.error,
+            message: result.message,
+          });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          customToken: result.customToken,
+          uid: result.uid,
+        });
+      } catch (e) {
+        console.error('[auth/kakao]', e);
+        return res.status(500).json({
+          ok: false,
+          error: 'internal',
+          message: e.message || 'internal error',
+        });
+      }
+    })(),
+  ).catch((e) => {
+    console.error('[auth/kakao] unhandled', e);
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, error: 'internal' });
+    }
   });
 });
 

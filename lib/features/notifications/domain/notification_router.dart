@@ -158,7 +158,7 @@ abstract final class NotificationRouter {
         RoomNavigation.openRoom(
           roomId: storeId,
           entry: entry,
-          tabIndex: 1,
+          tabIndex: 1, // 사장 근무표
           focusScheduleId: link.shiftId,
         );
         return;
@@ -184,7 +184,7 @@ abstract final class NotificationRouter {
       RoomNavigation.openRoom(
         roomId: storeId,
         entry: entry,
-        tabIndex: 0,
+        tabIndex: 0, // 사장 직원목록 (출퇴근 대시보드는 push)
       );
       RoomNavigation.pushSingleTop(
         name: AppRouteNames.ownerCommute(storeId),

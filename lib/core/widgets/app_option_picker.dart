@@ -188,7 +188,7 @@ class AppOptionPickerField<T> extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: !enabled || isHint
                           ? AppColors.textSecondary
-                          : const Color(0xFF191F28),
+                          : AppColors.textPrimary,
                     ),
                   ),
                 ),

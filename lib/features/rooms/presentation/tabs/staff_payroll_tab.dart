@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/time/kst_date_time.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
 import '../../../../mock/app_listenables.dart';
@@ -13,6 +12,8 @@ import '../../../../services/payroll_calculator.dart';
 import '../../../notifications/presentation/push_notification_switch_tile.dart';
 import '../../../profile/presentation/account_extras_section.dart';
 import '../../../schedules/widgets/pay_disclaimer_caption.dart';
+import '../../../../services/month_payroll_aggregator.dart';
+import '../widgets/staff_month_pay_summary_card.dart';
 
 /// 알바 3탭 — 급여·정보 (상단 요약 + ListTile 메뉴)
 class StaffPayrollTab extends StatelessWidget {
@@ -35,7 +36,7 @@ class StaffPayrollTab extends StatelessWidget {
         final store = MockStore.instance;
         final live =
             store.getMembership(room.id, membership.userId) ?? membership;
-        final summary = _MonthPaySummary.compute(
+        final summary = MonthPayrollAggregator.forWorker(
           store: store,
           roomId: room.id,
           userId: live.userId,
@@ -60,11 +61,8 @@ class StaffPayrollTab extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: 16),
-              // 1. 예상 급여 카드
-              _MonthSummaryCard(summary: summary, currency: currency),
-              const SizedBox(height: 20),
 
-              // 2. 급여 및 근무
+              // 1. 급여 및 근무
               _MenuSection(
                 title: '급여 및 근무',
                 children: [
@@ -74,7 +72,7 @@ class StaffPayrollTab extends StatelessWidget {
                     horizontalTitleGap: 12,
                     leading: const Icon(
                       Icons.receipt_long_outlined,
-                      color: AppColors.primary,
+                      color: AppColors.textPrimary,
                     ),
                     title: Text(
                       '실근무 급여 상세 내역',
@@ -87,7 +85,7 @@ class StaffPayrollTab extends StatelessWidget {
                       summary.workedDays == 0
                           ? '이번 달 퇴근 기록 없음'
                           : '이번 달 ${summary.workedDays}일 · '
-                              '${_formatHours(summary.netWorkedMinutes)}',
+                              '${formatStaffWorkHours(summary.netWorkedMinutes)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -112,7 +110,7 @@ class StaffPayrollTab extends StatelessWidget {
                     horizontalTitleGap: 12,
                     leading: const Icon(
                       Icons.payments_outlined,
-                      color: AppColors.primary,
+                      color: AppColors.textPrimary,
                     ),
                     title: Text(
                       '기본 시급 및 수당 조건',
@@ -160,7 +158,7 @@ class StaffPayrollTab extends StatelessWidget {
                     trailing: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 160),
                       child: Text(
-                        '${live.displayName} · ${live.role.labelKo}',
+                        '${live.displayName} · ${live.roleLabel}',
                         textAlign: TextAlign.end,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -192,7 +190,7 @@ class StaffPayrollTab extends StatelessWidget {
                     showProfileEdit: false,
                     showNotificationTest: true,
                     showTestAccounts: true,
-                    showLogoutDelete: true,
+                    showLogoutDelete: false,
                     showLegal: false,
                     showSupportEmail: false,
                   ),
@@ -200,13 +198,13 @@ class StaffPayrollTab extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // 4. 약관 및 정책
+              // 4. 약관 및 정책 · 로그아웃/회원탈퇴
               const _MenuSection(
                 title: '약관 및 정책',
                 children: [
                   AccountExtrasSection(
                     showProfileEdit: false,
-                    showLogoutDelete: false,
+                    showLogoutDelete: true,
                     showTestAccounts: false,
                     showNotificationTest: false,
                     showLegal: true,
@@ -237,7 +235,7 @@ class StaffPayrollTab extends StatelessWidget {
     BuildContext context, {
     required RoomModel room,
     required RoomMemberModel member,
-    required _MonthPaySummary summary,
+    required WorkerMonthPaySummary summary,
   }) {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -288,164 +286,13 @@ class StaffPayrollTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 _DetailRow(label: '이름', value: member.displayName),
-                _DetailRow(label: '직책', value: member.role.labelKo),
+                _DetailRow(label: '직책', value: member.roleLabel),
                 _DetailRow(label: '매장', value: roomName),
               ],
             ),
           ),
         );
       },
-    );
-  }
-}
-
-String _formatHours(int minutes) {
-  if (minutes <= 0) return '0시간';
-  final h = minutes ~/ 60;
-  final m = minutes % 60;
-  if (m == 0) return '$h시간';
-  if (h == 0) return '$m분';
-  return '$h시간 $m분';
-}
-
-class _MonthPaySummary {
-  const _MonthPaySummary({
-    required this.year,
-    required this.month,
-    required this.estimatedPay,
-    required this.basePay,
-    required this.weeklyPay,
-    required this.overtimePay,
-    required this.netWorkedMinutes,
-    required this.workedDays,
-  });
-
-  final int year;
-  final int month;
-  final int estimatedPay;
-  final int basePay;
-  final int weeklyPay;
-  final int overtimePay;
-  final int netWorkedMinutes;
-  final int workedDays;
-
-  String get monthLabel => '$year년 $month월';
-
-  static _MonthPaySummary compute({
-    required MockStore store,
-    required String roomId,
-    required String userId,
-  }) {
-    final now = KstDateTime.now();
-    final year = now.year;
-    final month = now.month;
-
-    final clockOutDates = <DateTime>{};
-    for (final a in store.attendanceForUser(roomId, userId)) {
-      if (a.type != AttendanceType.clockOut) continue;
-      final d = a.timestamp;
-      if (d.year != year || d.month != month) continue;
-      clockOutDates.add(DateTime(d.year, d.month, d.day));
-    }
-
-    var base = 0;
-    var weekly = 0;
-    var overtime = 0;
-    var netMin = 0;
-    var days = 0;
-    for (final day in clockOutDates) {
-      final e = store.actualPayEstimateOnDate(roomId, userId, day);
-      if (e == null || e.total <= 0) continue;
-      days++;
-      base += e.basePay;
-      weekly += e.weeklyHolidayPay;
-      overtime += e.overtimeNightPay;
-      netMin += e.netWorkedMinutes;
-    }
-
-    return _MonthPaySummary(
-      year: year,
-      month: month,
-      estimatedPay: base + weekly + overtime,
-      basePay: base,
-      weeklyPay: weekly,
-      overtimePay: overtime,
-      netWorkedMinutes: netMin,
-      workedDays: days,
-    );
-  }
-}
-
-class _MonthSummaryCard extends StatelessWidget {
-  const _MonthSummaryCard({
-    required this.summary,
-    required this.currency,
-  });
-
-  final _MonthPaySummary summary;
-  final NumberFormat currency;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${summary.monthLabel} 실근무 예상 급여',
-            style: textTheme.bodySmall?.copyWith(
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${currency.format(summary.estimatedPay)}원',
-            style: textTheme.titleLarge?.copyWith(
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              color: AppColors.success,
-              letterSpacing: -0.6,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Icon(
-                Icons.schedule_rounded,
-                size: 18,
-                color: AppColors.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '총 근무 ${_formatHours(summary.netWorkedMinutes)}',
-                style: textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (summary.workedDays > 0) ...[
-                const SizedBox(width: 8),
-                Text(
-                  '· ${summary.workedDays}일',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '급여는 실제 출퇴근 기준으로 산정되며 참고용입니다.',
-            style: textTheme.labelSmall?.copyWith(
-              color: AppColors.textCaption,
-              height: 1.35,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -602,7 +449,7 @@ class _PayDetailScreen extends StatelessWidget {
 
   final RoomModel room;
   final RoomMemberModel member;
-  final _MonthPaySummary summary;
+  final WorkerMonthPaySummary summary;
 
   @override
   Widget build(BuildContext context) {
@@ -641,37 +488,37 @@ class _PayDetailScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '예상 급여',
+                    '실근무 급여',
                     style: textTheme.bodySmall,
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${currency.format(summary.estimatedPay)}원',
+                    '${currency.format(summary.actualPay)}원',
                     style: textTheme.titleLarge?.copyWith(
                       fontSize: 28,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.success,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 12),
                   _DetailRow(
                     label: '기본급',
-                    value: '${currency.format(summary.basePay)}원',
+                    value: '${currency.format(summary.actualBasePay)}원',
                   ),
-                  if (summary.weeklyPay > 0)
+                  if (summary.actualWeeklyPay > 0)
                     _DetailRow(
                       label: '주휴수당',
-                      value: '${currency.format(summary.weeklyPay)}원',
+                      value: '${currency.format(summary.actualWeeklyPay)}원',
                     ),
-                  if (summary.overtimePay > 0)
+                  if (summary.actualOvertimePay > 0)
                     _DetailRow(
                       label: '연장·야간',
-                      value: '${currency.format(summary.overtimePay)}원',
+                      value: '${currency.format(summary.actualOvertimePay)}원',
                     ),
                   const Divider(height: 20),
                   _DetailRow(
                     label: '근무시간',
-                    value: _formatHours(summary.netWorkedMinutes),
+                    value: formatStaffWorkHours(summary.actualNetMinutes),
                   ),
                   _DetailRow(
                     label: '근무일수',
@@ -679,14 +526,25 @@ class _PayDetailScreen extends StatelessWidget {
                         ? '-'
                         : '${summary.workedDays}일',
                   ),
+                  const Divider(height: 20),
+                  if (summary.remainingSchedulePay > 0)
+                    _DetailRow(
+                      label: '남은 배정',
+                      value:
+                          '${currency.format(summary.remainingSchedulePay)}원',
+                    ),
+                  _DetailRow(
+                    label: '이번 달 예상',
+                    value: '${currency.format(summary.projectedPay)}원',
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
             Text(
               summary.workedDays == 0
-                  ? '이번 달 퇴근한 근무가 있으면 여기에 합산됩니다.'
-                  : '실제 출퇴근 시간 기준으로 산정됩니다.',
+                  ? '퇴근 확정분 + 남은 배정으로 예상을 계산합니다.'
+                  : '실근무는 퇴근 시각·계약 수당, 예상은 남은 배정·주휴를 포함합니다.',
               style: textTheme.bodySmall?.copyWith(
                 color: AppColors.textSecondary,
                 height: 1.35,

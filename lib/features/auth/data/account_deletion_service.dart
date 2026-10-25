@@ -1,15 +1,12 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../core/navigation/app_navigation.dart';
 import '../../../core/navigation/app_navigator.dart';
-import '../../../core/navigation/app_route_names.dart';
 import '../../../core/storage/local_data_cleaner.dart';
 import '../../../core/storage/secure_session_storage.dart';
 import '../../../core/utils/async_action_guard.dart';
 import '../../../data/services/api_service.dart';
 import '../../../mock/mock_session.dart';
 import '../../../services/fcm_service.dart';
-import '../presentation/auth_home_gate.dart';
 import 'social_auth_unlink_service.dart';
 
 /// Play 정책 — 계정 삭제(탈퇴) 오케스트레이션
@@ -145,12 +142,13 @@ class AccountDeletionService {
     });
   }
 
+  /// 방·설정 스택을 비우고 루트 [AuthHomeGate] 로 복귀.
+  /// 미로그인 시 [LoggedOutHome] 이 로그인 화면을 push 하므로 뒤로가기가 동작한다.
   void _goLoginGate() {
-    if (appNavigatorKey.currentState == null) return;
-    AppNavigation.pushAndRemoveUntilRoot(
-      name: AppRouteNames.home,
-      builder: (_) => const AuthHomeGate(),
-    );
+    final nav = appNavigatorKey.currentState;
+    if (nav == null) return;
+    // 기존 AuthHomeGate(home) 를 유지한 채 위 화면만 제거 — 중복 게이트 push 방지
+    nav.popUntil((route) => route.isFirst);
   }
 }
 

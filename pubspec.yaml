@@ -47,6 +47,9 @@ dependencies:
   webview_flutter: ^4.14.1
   url_launcher: ^6.3.3
 
+  # 광고 (AdMob) — 7+ 가 Gradle 9 / AGP 9 호환
+  google_mobile_ads: ^7.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

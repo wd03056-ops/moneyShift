@@ -1,3 +1,31 @@
+import '../core/time/kst_date_time.dart';
+
+/// `yyyy-MM-dd` → `M.d` (예: 10.1)
+String formatLaborPeriodMonthDay(String ymd) {
+  if (ymd.length < 10) return ymd;
+  final m = int.tryParse(ymd.substring(5, 7));
+  final d = int.tryParse(ymd.substring(8, 10));
+  if (m == null || d == null) return ymd.substring(5);
+  return '$m.$d';
+}
+
+/// 인건비 기간 표기: `10.1 ~ 오늘 (10.5)` (집계 종료일이 오늘일 때)
+String formatLaborCostPeriodLabel(
+  String periodFrom,
+  String periodTo, {
+  String? todayKey,
+}) {
+  if (periodFrom.length < 10 || periodTo.length < 10) return '';
+  final from = formatLaborPeriodMonthDay(periodFrom);
+  final to = formatLaborPeriodMonthDay(periodTo);
+  final today = todayKey ?? KstDateTime.todayKey();
+  if (periodTo == today) {
+    // 오늘 ↔ ( 사이 공백 1칸: "오늘 (10.5)"
+    return '$from ~ 오늘 ($to)';
+  }
+  return '$from ~ $to';
+}
+
 /// 사장 대시보드 — 월간 인건비 집계 결과
 class MonthlyLaborCost {
   const MonthlyLaborCost({
@@ -38,6 +66,10 @@ class MonthlyLaborCost {
 
   int get totalWithEmployerBurden =>
       totalLaborCost + employerSocialInsuranceEstimate;
+
+  /// `10.1 ~ 오늘 (10.5)` 형식
+  String get periodLabel =>
+      formatLaborCostPeriodLabel(periodFrom, periodTo);
 
   factory MonthlyLaborCost.fromJson(Map<String, dynamic> json) {
     final period = json['period'];

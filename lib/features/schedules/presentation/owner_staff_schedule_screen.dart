@@ -133,7 +133,7 @@ class _OwnerStaffScheduleScreenState extends State<OwnerStaffScheduleScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  '${widget.member.displayName} · ${widget.member.role.labelKo}',
+                  '${widget.member.displayName} · ${widget.member.roleLabel}',
                   style: textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),

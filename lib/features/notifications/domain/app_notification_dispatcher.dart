@@ -358,7 +358,7 @@ abstract final class AppNotificationDispatcher {
       storeId: storeId,
       data: {
         'action': isClockIn ? 'clock_in' : 'clock_out',
-        if (workerUid != null) 'workerId': workerUid,
+        'workerId': ?workerUid,
       },
       kind: isClockIn
           ? NotificationEventKind.attendanceClockIn

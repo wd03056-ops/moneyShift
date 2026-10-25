@@ -12,8 +12,7 @@ import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../mock/mock_user.dart';
 import '../../auth/data/account_deletion_service.dart';
-import '../../legal/legal_document_screen.dart';
-import '../../legal/legal_texts.dart';
+import '../../legal/legal_links.dart';
 import '../../notifications/presentation/notification_test_screen.dart';
 import '../../notifications/presentation/push_notification_switch_tile.dart';
 import 'edit_profile_screen.dart';
@@ -30,14 +29,6 @@ class MyInfoScreen extends StatelessWidget {
     AppNavigation.pushSingleTop(
       name: AppRouteNames.editProfile,
       builder: (_) => const EditProfileScreen(),
-    );
-  }
-
-  void _openLegal(BuildContext context, {required String title, required String body}) {
-    final slug = title.hashCode.toRadixString(16);
-    AppNavigation.pushSingleTop(
-      name: AppRouteNames.legal(slug),
-      builder: (_) => LegalDocumentScreen(title: title, body: body),
     );
   }
 
@@ -67,6 +58,7 @@ class MyInfoScreen extends StatelessWidget {
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
+    // logout → popUntil(first) 가 로딩 다이얼로그·방 스택을 함께 제거
     await AccountDeletionService.instance.logout();
   }
 
@@ -76,9 +68,9 @@ class MyInfoScreen extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        title: const Text('계정 삭제'),
+        title: const Text('회원탈퇴'),
         content: const Text(
-          '계정을 삭제하면 소셜 로그인 연동이 해제되고, '
+          '회원탈퇴 시 소셜 로그인 연동이 해제되고, '
           '프로필·푸시 토큰 등 개인정보가 파기됩니다.\n\n'
           '매장의 근무·급여 기록은 \'(탈퇴한 회원)\'으로 남으며 '
           '복구할 수 없습니다.\n\n계속하시겠습니까?',
@@ -91,7 +83,7 @@ class MyInfoScreen extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
-              '삭제',
+              '탈퇴',
               style: TextStyle(color: AppColors.holiday),
             ),
           ),
@@ -124,7 +116,7 @@ class MyInfoScreen extends StatelessWidget {
         Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('계정 삭제 실패: $e'),
+            content: Text('회원탈퇴 실패: $e'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.holiday,
           ),
@@ -215,20 +207,12 @@ class MyInfoScreen extends StatelessWidget {
                 Text('약관 및 정책', style: textTheme.titleMedium),
                 const SizedBox(height: 10),
                 AppCard(
-                  onTap: () => _openLegal(
-                    context,
-                    title: '이용약관',
-                    body: LegalTexts.termsOfServiceMarkdown,
-                  ),
+                  onTap: () => LegalLinks.openTermsOfService(context),
                   child: Text('이용약관', style: textTheme.bodyLarge),
                 ),
                 const SizedBox(height: 10),
                 AppCard(
-                  onTap: () => _openLegal(
-                    context,
-                    title: '개인정보처리방침',
-                    body: LegalTexts.privacyPolicyMarkdown,
-                  ),
+                  onTap: () => LegalLinks.openPrivacyPolicy(context),
                   child: Text('개인정보처리방침', style: textTheme.bodyLarge),
                 ),
                 const SizedBox(height: 10),
@@ -301,7 +285,7 @@ class MyInfoScreen extends StatelessWidget {
                 AppCard(
                   onTap: () => _confirmDeleteAccount(context),
                   child: Text(
-                    '계정 삭제',
+                    '회원탈퇴',
                     style: textTheme.bodyLarge?.copyWith(
                       color: AppColors.holiday,
                       fontWeight: FontWeight.w700,

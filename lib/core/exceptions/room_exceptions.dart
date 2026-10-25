@@ -36,7 +36,7 @@ class RoomPermissionDeniedException implements Exception {
 
 class InviteInvalidException implements Exception {
   const InviteInvalidException([
-    this.message = '유효하지 않거나 만료된 초대 코드입니다.',
+    this.message = '존재하지 않거나 잘못된 초대 코드입니다.',
   ]);
   final String message;
 

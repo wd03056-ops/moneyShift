@@ -12,10 +12,8 @@
     <!-- FCM (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-    <!-- 광고 ID 미사용 — Play 선언용으로 라이브러리 병합 권한 제거 -->
-    <uses-permission
-        android:name="com.google.android.gms.permission.AD_ID"
-        tools:node="remove"/>
+    <!-- AdMob 광고 ID (Play 선언 · 개인화된 광고) -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
 
     <!-- 위치는 선택 기능(GPS 없는 기기에서도 설치 가능) -->
     <uses-feature
@@ -92,6 +90,11 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="money_shift_default" />
 
+        <!-- AdMob — 개발용 Google 테스트 앱 ID (출시 전 본인 앱 ID로 교체) -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"/>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
@@ -101,6 +104,19 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- 약관·개인정보 등 외부 https 링크 (url_launcher · Android 11+) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
+        <!-- Chrome Custom Tabs (LaunchMode.inAppBrowserView) -->
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService"/>
         </intent>
         <!-- 카카오톡 설치 여부 조회 (Android 11+) — SDK manifest 와 중복돼도 무방 -->
         <package android:name="com.kakao.talk"/>

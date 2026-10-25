@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_text_input_defaults.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
@@ -92,10 +93,13 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
   }
 
-  void _logout() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      MockSession.instance.logout();
-    });
+  Future<void> _logout() async {
+    // 세션만 끊으면 AuthHomeGate → LoggedOutHome → 로그인 push (뒤로가기 가능)
+    MockSession.instance.logout();
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.popUntil((route) => route.isFirst);
+    }
   }
 
   @override
@@ -129,7 +133,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               children: [
                 StickyActionButton(
                   label: '확인',
-                  variant: StickyActionVariant.primary,
+                  variant: StickyActionVariant.filled,
                   isLoading: _saving,
                   onPressed: _saving ? null : _submit,
                 ),
@@ -159,7 +163,15 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   enabled: !_saving,
                   autofocus: true,
                   textInputAction: TextInputAction.done,
-                  textCapitalization: TextCapitalization.words,
+                  textCapitalization: TextCapitalization.none,
+                  keyboardType: TextInputType.text,
+                  autocorrect: AppTextInputDefaults.autocorrect,
+                  enableSuggestions: AppTextInputDefaults.enableSuggestions,
+                  spellCheckConfiguration:
+                      AppTextInputDefaults.spellCheckConfiguration,
+                  smartDashesType: AppTextInputDefaults.smartDashesType,
+                  smartQuotesType: AppTextInputDefaults.smartQuotesType,
+                  style: const TextStyle(decoration: TextDecoration.none),
                   inputFormatters: [
                     FilteringTextInputFormatter.deny(RegExp(r'\n')),
                     LengthLimitingTextInputFormatter(30),
@@ -170,7 +182,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   ),
                   validator: _validate,
                   onFieldSubmitted: (_) => _submit(),
-                  onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 12),
                 Text(

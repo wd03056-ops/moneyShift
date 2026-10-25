@@ -8,6 +8,13 @@ class FirestorePaths {
   static const String storeMembers = 'store_members';
   static const String roomMembers = 'room_members';
   static const String roomInvites = 'room_invites';
+
+  /// 초대 코드 전역 유일 인덱스 — 문서 ID = 코드
+  static const String inviteCodes = 'invite_codes';
+
+  /// `rooms/{roomId}/custom_roles`
+  static const String customRoles = 'custom_roles';
+
   static const String schedules = 'schedules';
   static const String scheduleLogs = 'schedule_logs';
   static const String shiftRequests = 'shift_requests';
@@ -49,6 +56,27 @@ class FirestorePaths {
       '$roomMembers/${roomMemberDocId(roomId, userId)}';
 
   static String roomInvite(String inviteId) => '$roomInvites/$inviteId';
+
+  /// 기본 직책(매니저/직원/알바) 초대 문서 ID — 방·직책당 단건
+  /// `{roomId}_default_{role}`
+  static String defaultRoleInviteDocId(String roomId, String roleFirestoreValue) =>
+      '${roomId}_default_$roleFirestoreValue';
+
+  /// 방 내 커스텀 직책명 유일 락 — 문서 ID = `namelock_{normalizedName}`
+  /// (`isActive` 없음 → listActive 쿼리에서 제외)
+  static String customRoleNameLockDocId(String nameLower) {
+    final safe = nameLower.replaceAll(RegExp(r'[/\\]'), '_');
+    return 'namelock_$safe';
+  }
+
+  static String inviteCode(String code) => '$inviteCodes/$code';
+
+  static String roomCustomRoles(String roomId) =>
+      '$rooms/$roomId/$customRoles';
+
+  static String roomCustomRole(String roomId, String roleId) =>
+      '${roomCustomRoles(roomId)}/$roleId';
+
   static String schedule(String scheduleId) => '$schedules/$scheduleId';
   static String scheduleLog(String logId) => '$scheduleLogs/$logId';
   static String shiftRequest(String requestId) => '$shiftRequests/$requestId';
