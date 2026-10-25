@@ -63,6 +63,14 @@ function firebaseEnvPresent() {
   }
 }
 
+/** Play Console용 개인정보 처리방침 — Notion으로 리다이렉트 */
+const PRIVACY_POLICY_NOTION_URL =
+  'https://giddy-gaura-998.notion.site/Privacy-Policy-401ad28bec5c80369f2bcac4f2652099';
+
+app.get(['/privacy', '/api/privacy'], (_req, res) => {
+  return res.redirect(302, PRIVACY_POLICY_NOTION_URL);
+});
+
 /** 헬스체크 — Flutter / 배포 확인용 (절대 throw 하지 않음) */
 app.get(['/api/health', '/health'], (_req, res) => {
   try {

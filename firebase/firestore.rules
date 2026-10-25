@@ -44,6 +44,12 @@ service cloud.firestore {
           ]);
       }
 
+      // 실명 온보딩 등 본인 프로필 필드만 수정
+      function onlyTouchesProfileFields() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['realName', 'displayName', 'updatedAt', 'uid', 'kakaoId', 'authProvider']);
+      }
+
       function canWriteUserDoc() {
         return isSelf(userId)
           || isDevTestId(userId)
@@ -52,10 +58,11 @@ service cloud.firestore {
               && request.resource.data.authProvider in ['kakao', 'mock']);
       }
 
-      allow create: if canWriteUserDoc();
-      // 타인(카카오 upsert 경로)은 민감 필드 수정 불가
+      // 본인(Custom Token UID = 카카오 ID) 생성·수정 허용
+      allow create: if isSelf(userId) || canWriteUserDoc();
       allow update: if isSelf(userId)
         || isDevTestId(userId)
+        || (isSelf(userId) && onlyTouchesProfileFields())
         || (canWriteUserDoc() && !touchesNotificationSecrets());
       allow delete: if false;
 

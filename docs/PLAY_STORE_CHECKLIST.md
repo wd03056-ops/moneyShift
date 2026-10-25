@@ -20,8 +20,8 @@
 ## Play Console에서 필수 입력
 
 1. **개인정보처리방침 URL**  
-   `docs/privacy_policy.html`을 GitHub Pages / Firebase Hosting 등에 올린 뒤  
-   `AppConstants.privacyPolicyUrl`과 Console URL을 동일하게 맞춥니다.
+   `https://moneyshift-ten.vercel.app/privacy`  
+   (Vercel → Notion 302 리다이렉트. `AppConstants.privacyPolicyUrl`과 동일하게 Console에 등록)
 
 2. **앱 콘텐츠 · Data safety**
    - 수집: 이름/이메일, 정확한 위치(앱 기능), 앱 활동(근무 기록), 기기·기타(푸시 토큰)
@@ -55,6 +55,7 @@
 | 상수 | 파일 | 내용 |
 |------|------|------|
 | `supportEmail` | `lib/core/constants/app_constants.dart` | 실제 문의 메일 |
-| `privacyPolicyUrl` / `termsOfServiceUrl` | 동일 | 호스팅 URL |
+| `privacyPolicyUrl` | 동일 | `https://moneyshift-ten.vercel.app/privacy` |
+| `termsOfServiceUrl` | 동일 | Notion 이용약관 URL |
 | `applicationId` | 이미 `com.money.money_shift` | 필요 시 확정 |
 | release signing | `android/app/build.gradle.kts` | debug 서명 제거 |

@@ -6,10 +6,6 @@
       "use": "@vercel/node"
     },
     {
-      "src": "privacy/index.html",
-      "use": "@vercel/static"
-    },
-    {
       "src": "terms/index.html",
       "use": "@vercel/static"
     }
@@ -17,7 +13,10 @@
   "routes": [
     {
       "src": "^/privacy/?$",
-      "dest": "/privacy/index.html"
+      "status": 302,
+      "headers": {
+        "Location": "https://giddy-gaura-998.notion.site/Privacy-Policy-401ad28bec5c80369f2bcac4f2652099"
+      }
     },
     {
       "src": "^/terms/?$",

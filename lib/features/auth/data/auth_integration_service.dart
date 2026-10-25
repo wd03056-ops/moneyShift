@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/config/dev_auth_config.dart';
 import '../../../core/config/kakao_config.dart';
+import '../../../core/storage/secure_session_storage.dart';
 import '../../../data/services/api_service.dart';
 import '../../../mock/mock_user.dart';
 import '../../../models/enums/member_role.dart';
@@ -204,6 +205,36 @@ class AuthIntegrationService {
         realName: saved.realName,
       ),
       usedMockAuth: false,
+    );
+  }
+
+  /// 프로필 저장 전 등 — Auth UID 가 [uid] 인지 확인하고 아니면 카카오 토큰으로 재로그인
+  Future<void> ensureFirebaseAuthUid(String uid) async {
+    final current = _auth.currentUser;
+    if (current != null && current.uid == uid) {
+      debugPrint('[AuthIntegration] ensureAuth OK uid=$uid');
+      return;
+    }
+
+    final accessToken =
+        await SecureSessionStorage.instance.readAccessToken();
+    if (accessToken == null || accessToken.isEmpty) {
+      throw const AuthFlowException(
+        '로그인 세션이 만료되었습니다. 다시 로그인해 주세요.',
+        code: 'session_expired',
+      );
+    }
+
+    debugPrint(
+      '[AuthIntegration] ensureAuth re-login '
+      'current=${current?.uid} target=$uid',
+    );
+    await _signInFirebaseWithCustomToken(
+      KakaoAuthResult(
+        accessToken: accessToken,
+        userId: uid,
+        nickname: current?.displayName ?? '카카오 사용자',
+      ),
     );
   }
 

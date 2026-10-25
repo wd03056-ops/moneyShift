@@ -6,6 +6,8 @@ import '../../../core/widgets/app_text_input_defaults.dart';
 import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
 import '../../../services/user_firestore_service.dart';
+import '../data/auth_flow_exception.dart';
+import '../data/auth_integration_service.dart';
 
 /// 카카오 로그인 후 실명 온보딩
 class ProfileSetupScreen extends StatefulWidget {
@@ -91,17 +93,34 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     final realName = _nameController.text.trim();
     setState(() => _saving = true);
     try {
+      // Firestore rules: request.auth.uid == users/{uid}
+      // 카카오 Custom Token 세션이 없으면 저장 토큰으로 재인증
+      await AuthIntegrationService.instance.ensureFirebaseAuthUid(uid);
       await _users.saveRealName(uid: uid, realName: realName);
       if (!mounted) return;
       MockSession.instance.completeRealNameSetup(realName);
       debugPrint('[ProfileSetup] realName saved uid=$uid');
-    } catch (e, st) {
-      debugPrint('[ProfileSetup] FAIL: $e');
+    } on AuthFlowException catch (e, st) {
+      debugPrint('[ProfileSetup] AuthFlow FAIL ${e.code}: ${e.message}');
       debugPrint('$st');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('저장 실패: $e'),
+          content: Text(e.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('[ProfileSetup] FAIL: $e');
+      debugPrint('$st');
+      if (!mounted) return;
+      final msg = e.toString();
+      final friendly = msg.contains('permission-denied')
+          ? '저장 권한이 없습니다. 다시 로그인한 뒤 시도해 주세요.'
+          : '저장 실패: $e';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(friendly),
           behavior: SnackBarBehavior.floating,
         ),
       );

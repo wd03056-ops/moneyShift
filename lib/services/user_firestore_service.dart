@@ -161,6 +161,9 @@ class UserFirestoreService {
   }
 
   /// 온보딩 실명 저장 — `users/{uid}` merge
+  ///
+  /// 규칙: `request.auth.uid == uid` (카카오 Custom Token) 필요.
+  /// 문서가 없어도 create 가 되도록 uid/kakaoId/authProvider 를 함께 넣는다.
   Future<UserModel> saveRealName({
     required String uid,
     required String realName,
@@ -171,13 +174,25 @@ class UserFirestoreService {
     }
     try {
       final ref = _col.doc(uid);
+      final existing = await ref.get();
+      final isCreate = !existing.exists;
       await ref.set({
+        'uid': uid,
+        'kakaoId': uid,
+        'authProvider': 'kakao',
         'realName': trimmed,
         // 표시명도 실명으로 맞춰 급여·근태 UI와 일치
         'displayName': trimmed,
         'updatedAt': FieldValue.serverTimestamp(),
+        if (isCreate) ...{
+          'email': existing.data()?['email'] ?? '',
+          'fcmTokens': <String>[],
+          'ownedRoomCount': 0,
+          'role': MemberRole.parttime.firestoreValue,
+          'createdAt': FieldValue.serverTimestamp(),
+        },
       }, SetOptions(merge: true));
-      debugPrint('[UserFirestore] saveRealName ok uid=$uid');
+      debugPrint('[UserFirestore] saveRealName ok uid=$uid create=$isCreate');
       final snap = await ref.get();
       if (!snap.exists) {
         throw StateError('사용자 문서를 찾을 수 없습니다.');

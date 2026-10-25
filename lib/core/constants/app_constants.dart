@@ -16,9 +16,10 @@ class AppConstants {
   static const String supportEmail = 'support@moneyshift.app';
   static const String developerName = 'Money Shift';
 
-  /// 호스팅된 개인정보처리방침·이용약관 (Notion · Play Console 제출용)
+  /// 호스팅된 개인정보처리방침·이용약관 (Play Console 제출용)
+  /// `/privacy` 는 Vercel에서 Notion으로 302 리다이렉트
   static const String privacyPolicyUrl =
-      'https://giddy-gaura-998.notion.site/Privacy-Policy-401ad28bec5c80369f2bcac4f2652099';
+      'https://moneyshift-ten.vercel.app/privacy';
   static const String termsOfServiceUrl =
       'https://giddy-gaura-998.notion.site/Terms-Conditions-401ad28bec5c8067b331cf4858ed20ac';
 
