@@ -42,13 +42,15 @@ class OutlinedToggle extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
+                boxShadow: enabled
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x0F000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 1),
+                        ),
+                      ]
+                    : null,
               ),
             ),
           ),

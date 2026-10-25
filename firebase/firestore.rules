@@ -15,6 +15,11 @@ service cloud.firestore {
       return id is string && id.matches('^test_');
     }
 
+    // UI MockStore 데모 방(demo_room_shared) + test_ 픽스처
+    function isDevFixtureId(id) {
+      return id is string && (id.matches('^test_') || id.matches('^demo_'));
+    }
+
     function memberDoc(roomId, userId) {
       return get(/databases/$(database)/documents/room_members/$(roomId + '_' + userId)).data;
     }
@@ -144,23 +149,23 @@ service cloud.firestore {
 
     match /schedules/{scheduleId} {
       allow read: if isRoomMember(resource.data.roomId)
-        || isDevTestId(resource.data.roomId)
+        || isDevFixtureId(resource.data.roomId)
         || isDevTestId(scheduleId)
-        || isDevTestId(resource.data.storeId);
+        || isDevFixtureId(resource.data.storeId);
 
       allow create: if isRoomManager(request.resource.data.roomId)
-        || isDevTestId(request.resource.data.roomId)
+        || isDevFixtureId(request.resource.data.roomId)
         || isDevTestId(scheduleId)
-        || isDevTestId(request.resource.data.storeId);
+        || isDevFixtureId(request.resource.data.storeId);
 
       allow update: if isRoomManager(resource.data.roomId)
         || (isRoomMember(resource.data.roomId)
             && resource.data.workerId == request.auth.uid)
-        || isDevTestId(resource.data.roomId)
+        || isDevFixtureId(resource.data.roomId)
         || isDevTestId(scheduleId);
 
       allow delete: if isRoomManager(resource.data.roomId)
-        || isDevTestId(resource.data.roomId)
+        || isDevFixtureId(resource.data.roomId)
         || isDevTestId(scheduleId);
     }
 

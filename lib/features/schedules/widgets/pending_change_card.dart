@@ -3,6 +3,9 @@ import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/app_snack_bar.dart';
+import '../../../core/widgets/app_text_input_defaults.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/models.dart';
 import '../schedule_store.dart';
@@ -47,17 +50,18 @@ class _PendingChangeCardState extends State<PendingChangeCard> {
     try {
       ScheduleStore.acceptChange(widget.schedule.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('일정 변경을 수락했습니다. 근무표에 반영됩니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '일정 변경을 수락했습니다. 근무표에 반영됩니다.',
+        aboveStickyActions: true,
       );
       widget.onResolved?.call();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
+      showAppSnackBar(
+        context,
+        message: '$e',
+        aboveStickyActions: true,
       );
     } finally {
       if (mounted) setState(() => _localBusy = false);
@@ -75,18 +79,20 @@ class _PendingChangeCardState extends State<PendingChangeCard> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         title: const Text('변경 요청 거절'),
-        content: TextField(
-          controller: reasonController,
-          maxLines: 3,
-          autocorrect: false,
-          enableSuggestions: false,
-          spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
-          smartDashesType: SmartDashesType.disabled,
-          smartQuotesType: SmartQuotesType.disabled,
-          style: const TextStyle(decoration: TextDecoration.none),
-          decoration: const InputDecoration(
-            hintText: '거절 사유 (선택)',
-            border: OutlineInputBorder(),
+        content: AppElevatedInputShell(
+          child: TextField(
+            controller: reasonController,
+            maxLines: 3,
+            autocorrect: false,
+            enableSuggestions: false,
+            spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+            smartDashesType: SmartDashesType.disabled,
+            smartQuotesType: SmartQuotesType.disabled,
+            style: const TextStyle(decoration: TextDecoration.none),
+            decoration: AppTextInputDefaults.decoration(
+              labelText: '거절 사유',
+              hintText: '선택 입력',
+            ),
           ),
         ),
         actions: [
@@ -112,17 +118,18 @@ class _PendingChangeCardState extends State<PendingChangeCard> {
         rejectReason: reasonController.text,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('변경 요청을 거절했습니다. 기존 일정이 유지됩니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '변경 요청을 거절했습니다. 기존 일정이 유지됩니다.',
+        aboveStickyActions: true,
       );
       widget.onResolved?.call();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
+      showAppSnackBar(
+        context,
+        message: '$e',
+        aboveStickyActions: true,
       );
     } finally {
       reasonController.dispose();
@@ -305,22 +312,19 @@ class _PendingChangeCardState extends State<PendingChangeCard> {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: StickyActionButton(
+                  label: '거절하기',
+                  variant: StickyActionVariant.primary,
                   onPressed: _busy ? null : _reject,
-                  child: const Text('거절하기'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: FilledButton(
+                child: StickyActionButton(
+                  label: '수락하기',
+                  variant: StickyActionVariant.filled,
                   onPressed: _busy ? null : _accept,
-                  child: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('수락하기'),
+                  isLoading: _busy,
                 ),
               ),
             ],

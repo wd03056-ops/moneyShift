@@ -9,11 +9,12 @@ import '../../../core/navigation/app_route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/time/kst_date_time.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/app_snack_bar.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/models.dart';
-import '../widgets/pay_breakdown_view.dart';
-import '../widgets/pending_change_card.dart';
+import '../widgets/schedule_assigned_day_nav.dart';
+import '../widgets/schedule_day_detail_card.dart';
 import 'create_schedule_screen.dart';
 import 'owner_change_request_sheet.dart';
 
@@ -37,8 +38,9 @@ class _OwnerStaffScheduleScreenState extends State<OwnerStaffScheduleScreen> {
   late DateTime _focusedDay;
   late final ValueNotifier<DateTime> _selectedDay;
 
-  static const double _headerH = 52;
-  static const double _dowH = 22;
+  static const double _headerH = 44;
+  static const double _dowH = 20;
+  static const double _minRowHeight = 52;
 
   static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -61,32 +63,103 @@ class _OwnerStaffScheduleScreenState extends State<OwnerStaffScheduleScreen> {
 
   List<ScheduleModel> _eventsForDay(List<ScheduleModel> all, DateTime day) {
     final key = _dateKey(day);
-    return all.where((s) => s.date == key).toList();
+    return all.where((s) {
+      if (s.date.isNotEmpty) return s.date == key;
+      return _dateKey(s.startTime) == key;
+    }).toList();
   }
 
   Map<DateTime, List<ScheduleModel>> _groupByDate(List<ScheduleModel> all) {
     final map = <DateTime, List<ScheduleModel>>{};
     for (final s in all) {
-      final parts = s.date.split('-');
-      if (parts.length != 3) continue;
-      final day = DateTime(
-        int.parse(parts[0]),
-        int.parse(parts[1]),
-        int.parse(parts[2]),
-      );
+      final day = s.date.isNotEmpty
+          ? () {
+              final parts = s.date.split('-');
+              if (parts.length != 3) return _dateOnly(s.startTime);
+              return DateTime(
+                int.parse(parts[0]),
+                int.parse(parts[1]),
+                int.parse(parts[2]),
+              );
+            }()
+          : _dateOnly(s.startTime);
       map.putIfAbsent(day, () => []).add(s);
     }
     return map;
   }
 
-  double _calendarHeight(double rowHeight) =>
-      _headerH + _dowH + (rowHeight * 6);
+  double _calendarHeight(double rowHeight, DateTime focused) {
+    final first = DateTime(focused.year, focused.month, 1);
+    final last = DateTime(focused.year, focused.month + 1, 0);
+    final startOffset = first.weekday % 7;
+    final weeks = ((startOffset + last.day + 6) ~/ 7).clamp(4, 6);
+    return _headerH + _dowH + (rowHeight * weeks) + 8;
+  }
+
+  Widget _ownerActions(BuildContext context, ScheduleModel s) {
+    final textTheme = Theme.of(context).textTheme;
+    return Row(
+      children: [
+        TextButton(
+          onPressed: () {
+            OwnerChangeRequestSheet.show(context, schedule: s);
+          },
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.primary,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            '일정 변경 요청',
+            style: textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+        TextButton(
+          onPressed: () {
+            try {
+              if (s.isAbsent) {
+                MockStore.instance.clearScheduleAbsent(s.id);
+                showAppSnackBar(
+                  context,
+                  message: '결근 처리를 해제했습니다.',
+                );
+              } else {
+                MockStore.instance.markScheduleAbsent(s.id);
+                showAppSnackBar(
+                  context,
+                  message: '결근 처리했습니다.',
+                );
+              }
+            } catch (e) {
+              showAppSnackBar(context, message: '$e');
+            }
+          },
+          style: TextButton.styleFrom(
+            foregroundColor:
+                s.isAbsent ? AppColors.textSecondary : AppColors.holiday,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            s.isAbsent ? '결근 해제' : '결근 처리',
+            style: textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color:
+                  s.isAbsent ? AppColors.textSecondary : AppColors.holiday,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final timeFmt = DateFormat('HH:mm');
-    final dayTitleFmt = DateFormat('M월 d일 (E)', 'ko_KR');
-
     return ListenableBuilder(
       listenable: MockStore.instance,
       builder: (context, _) {
@@ -144,12 +217,12 @@ class _OwnerStaffScheduleScreenState extends State<OwnerStaffScheduleScreen> {
                 const SizedBox(height: 20),
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final rowHeight =
-                        (constraints.maxWidth / 7 * 0.68).clamp(28.0, 38.0);
-                    final calH = _calendarHeight(rowHeight);
+                    final rowHeight = (constraints.maxWidth / 7 * 0.9)
+                        .clamp(_minRowHeight, 60.0);
+                    final calH = _calendarHeight(rowHeight, _focusedDay);
 
                     return AppCard(
-                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+                      padding: const EdgeInsets.fromLTRB(10, 10, 10, 18),
                       child: SizedBox(
                         height: calH,
                         width: constraints.maxWidth,
@@ -171,7 +244,7 @@ class _OwnerStaffScheduleScreenState extends State<OwnerStaffScheduleScreen> {
                                 locale: 'ko_KR',
                                 rowHeight: rowHeight,
                                 daysOfWeekHeight: _dowH,
-                                sixWeekMonthsEnforced: true,
+                                sixWeekMonthsEnforced: false,
                                 shouldFillViewport: true,
                                 pageAnimationEnabled:
                                     SnappyCalendar.pageAnimationEnabled,
@@ -230,49 +303,74 @@ class _OwnerStaffScheduleScreenState extends State<OwnerStaffScheduleScreen> {
                                   cellMargin: EdgeInsets.zero,
                                   cellPadding: EdgeInsets.zero,
                                   canMarkersOverflow: false,
-                                  markersMaxCount: 1,
-                                  markerSizeScale: 0.12,
-                                  markersAnchor: 0.98,
-                                  markerDecoration: const BoxDecoration(
-                                    color: AppColors.secondary,
-                                    shape: BoxShape.circle,
-                                  ),
+                                  markersMaxCount: 0,
                                   holidayDecoration: const BoxDecoration(),
+                                  todayDecoration: const BoxDecoration(),
+                                  selectedDecoration: const BoxDecoration(),
                                   defaultTextStyle:
                                       textTheme.labelSmall!.copyWith(
                                     color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                   weekendTextStyle:
                                       textTheme.labelSmall!.copyWith(
                                     color: AppColors.holiday,
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                   holidayTextStyle:
                                       textTheme.labelSmall!.copyWith(
                                     color: AppColors.holiday,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                  todayDecoration: BoxDecoration(
-                                    color: AppColors.secondary
-                                        .withValues(alpha: 0.15),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  todayTextStyle:
-                                      textTheme.labelSmall!.copyWith(
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                  selectedDecoration: const BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  selectedTextStyle:
-                                      textTheme.labelSmall!.copyWith(
-                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 holidayPredicate: KoreanHolidays.isHoliday,
+                                calendarBuilders: CalendarBuilders(
+                                  markerBuilder: (context, day, events) =>
+                                      const SizedBox.shrink(),
+                                  defaultBuilder: (context, day, focused) {
+                                    final events =
+                                        byDate[_dateOnly(day)] ?? const [];
+                                    return _DayCell(
+                                      day: day,
+                                      isSelected: false,
+                                      isToday: false,
+                                      hasAssigned: events.isNotEmpty,
+                                    );
+                                  },
+                                  todayBuilder: (context, day, focused) {
+                                    final events =
+                                        byDate[_dateOnly(day)] ?? const [];
+                                    return _DayCell(
+                                      day: day,
+                                      isSelected: false,
+                                      isToday: true,
+                                      hasAssigned: events.isNotEmpty,
+                                    );
+                                  },
+                                  selectedBuilder: (context, day, focused) {
+                                    final events =
+                                        byDate[_dateOnly(day)] ?? const [];
+                                    return _DayCell(
+                                      day: day,
+                                      isSelected: true,
+                                      isToday:
+                                          isSameDay(day, KstDateTime.now()),
+                                      hasAssigned: events.isNotEmpty,
+                                    );
+                                  },
+                                  holidayBuilder: (context, day, focused) {
+                                    final events =
+                                        byDate[_dateOnly(day)] ?? const [];
+                                    return _DayCell(
+                                      day: day,
+                                      isSelected:
+                                          isSameDay(selectedDay, day),
+                                      isToday:
+                                          isSameDay(day, KstDateTime.now()),
+                                      hasAssigned: events.isNotEmpty,
+                                    );
+                                  },
+                                ),
                                 onDaySelected: (day, focusedDay) {
                                   final next = _dateOnly(day);
                                   if (!isSameDay(
@@ -297,176 +395,50 @@ class _OwnerStaffScheduleScreenState extends State<OwnerStaffScheduleScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 ValueListenableBuilder<DateTime>(
                   valueListenable: _selectedDay,
                   builder: (context, selectedDay, _) {
-                    final selected =
-                        _eventsForDay(schedules, selectedDay);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          dayTitleFmt.format(selectedDay),
-                          style: textTheme.bodyLarge!.copyWith(
-                            color: KoreanHolidays.isRedDay(selectedDay)
-                                ? AppColors.holiday
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (selected.isEmpty)
-                          AppCard(
+                    void goTo(DateTime day) {
+                      final next = _dateOnly(day);
+                      _selectedDay.value = next;
+                      if (_focusedDay.year != next.year ||
+                          _focusedDay.month != next.month) {
+                        setState(() => _focusedDay = next);
+                      }
+                    }
+
+                    final selected = _eventsForDay(schedules, selectedDay);
+                    final detail = selected.isEmpty
+                        ? AppCard(
                             child: Text(
                               '이 날짜에 배정된 근무가 없습니다.',
-                              style: textTheme.bodyMedium,
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
                             ),
                           )
-                        else
-                          for (final s in selected)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: AppCard(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                            Row(
-                              children: [
-                                if (s.isChangeRequested)
-                                  const ChangeRequestedBadge()
-                                else
-                                  _StatusBadge(
-                                    label: s.attendanceStatusLabel,
-                                    color: s.isAbsent
-                                        ? AppColors.holiday
-                                        : s.isConfirmed
-                                            ? AppColors.success
-                                            : AppColors.warning,
-                                  ),
-                                const Spacer(),
-                                TextButton(
-                                  onPressed: () {
-                                    OwnerChangeRequestSheet.show(
-                                      context,
-                                      schedule: s,
-                                    );
-                                  },
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: AppColors.primary,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: Text(
-                                    '일정 변경 요청',
-                                    style: textTheme.labelSmall?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.primary,
-                                    ),
+                        : Column(
+                            children: [
+                              for (final s in selected)
+                                Padding(
+                                  key: ValueKey('day-card-${s.id}'),
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: ScheduleDayDetailCard(
+                                    key: ValueKey(s.id),
+                                    schedule: s,
+                                    enableSwapRequest: false,
+                                    footer: _ownerActions(context, s),
                                   ),
                                 ),
-                                TextButton(
-                                  onPressed: () {
-                                    try {
-                                      if (s.isAbsent) {
-                                        MockStore.instance
-                                            .clearScheduleAbsent(s.id);
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('결근 처리를 해제했습니다.'),
-                                            behavior: SnackBarBehavior.floating,
-                                          ),
-                                        );
-                                      } else {
-                                        MockStore.instance
-                                            .markScheduleAbsent(s.id);
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                            content: Text('결근 처리했습니다.'),
-                                            behavior: SnackBarBehavior.floating,
-                                          ),
-                                        );
-                                      }
-                                    } catch (e) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text('$e'),
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
-                                      );
-                                    }
-                                  },
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: s.isAbsent
-                                        ? AppColors.textSecondary
-                                        : AppColors.holiday,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: Text(
-                                    s.isAbsent ? '결근 해제' : '결근 처리',
-                                    style: textTheme.labelSmall?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: s.isAbsent
-                                          ? AppColors.textSecondary
-                                          : AppColors.holiday,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              '${timeFmt.format(s.startTime)} ~ '
-                              '${timeFmt.format(s.endTime)}',
-                              style: textTheme.bodyLarge?.copyWith(
-                                fontSize: 16,
-                              ),
-                            ),
-                            if (s.isChangeRequested &&
-                                s.pendingChange != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                '${timeFmt.format(s.startTime)} ➔ '
-                                '${timeFmt.format(s.pendingChange!.startTime)}'
-                                '  ·  '
-                                '${timeFmt.format(s.endTime)} ➔ '
-                                '${timeFmt.format(s.pendingChange!.endTime)}',
-                                style: textTheme.bodySmall?.copyWith(
-                                  color: AppColors.warning,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
                             ],
-                            if (s.estimatedPay != null && !s.isAbsent) ...[
-                              const SizedBox(height: 10),
-                              PayBreakdownView(schedule: s),
-                            ],
-                            if (s.isAbsent) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                '결근으로 처리되어 급여에 포함되지 않습니다.',
-                                style: textTheme.bodySmall?.copyWith(
-                                  color: AppColors.holiday,
-                                ),
-                              ),
-                            ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                      ],
+                          );
+
+                    return ScheduleAssignedDayNav(
+                      selectedDay: selectedDay,
+                      assignedDays: byDate.keys.toList(),
+                      onGoTo: goTo,
+                      child: detail,
                     );
                   },
                 ),
@@ -479,26 +451,77 @@ class _OwnerStaffScheduleScreenState extends State<OwnerStaffScheduleScreen> {
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.label, required this.color});
+class _DayCell extends StatelessWidget {
+  const _DayCell({
+    required this.day,
+    required this.isSelected,
+    required this.isToday,
+    this.hasAssigned = false,
+  });
 
-  final String label;
-  final Color color;
+  final DateTime day;
+  final bool isSelected;
+  final bool isToday;
+  final bool hasAssigned;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
+    final isRed = KoreanHolidays.isRedDay(day);
+
+    final Color textColor;
+    if (isSelected) {
+      textColor = Colors.white;
+    } else if (isRed) {
+      textColor = AppColors.holiday;
+    } else {
+      textColor = AppColors.textPrimary;
+    }
+
+    return SizedBox(
+      height: 52,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isSelected ? AppColors.primary : null,
+              border: !isSelected && isToday
+                  ? Border.all(color: AppColors.primary, width: 1.2)
+                  : null,
             ),
+            child: Text(
+              '${day.day}',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 14,
+                    height: 1,
+                    color: textColor,
+                    fontWeight: isSelected || isToday
+                        ? FontWeight.w700
+                        : FontWeight.w600,
+                  ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          SizedBox(
+            width: 5,
+            height: 5,
+            child: hasAssigned && !isToday
+                ? DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected
+                          ? AppColors.primary.withValues(alpha: 0.45)
+                          : AppColors.secondary,
+                    ),
+                  )
+                : null,
+          ),
+        ],
       ),
     );
   }

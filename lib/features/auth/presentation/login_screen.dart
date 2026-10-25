@@ -14,6 +14,7 @@ import '../../../core/storage/secure_session_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../mock/mock_user.dart';
@@ -89,24 +90,26 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const Text('구글 심사용 테스트 계정으로 로그인하시겠습니까?'),
               const SizedBox(height: 20),
-              FilledButton(
+              StickyActionButton(
+                label: '사장님 테스트 계정 로그인',
+                variant: StickyActionVariant.filled,
                 onPressed: _busy
                     ? null
                     : () {
                         Navigator.of(ctx).pop();
                         unawaited(_loginWithMock(MockAuthPersona.owner));
                       },
-                child: const Text('사장님 테스트 계정 로그인'),
               ),
               const SizedBox(height: 8),
-              OutlinedButton(
+              StickyActionButton(
+                label: '직원 테스트 계정 로그인',
+                variant: StickyActionVariant.primary,
                 onPressed: _busy
                     ? null
                     : () {
                         Navigator.of(ctx).pop();
                         unawaited(_loginWithMock(MockAuthPersona.staff));
                       },
-                child: const Text('직원 테스트 계정 로그인'),
               ),
               const SizedBox(height: 4),
               TextButton(

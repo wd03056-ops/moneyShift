@@ -87,4 +87,15 @@ void main() {
     expect(blocks, hasLength(2));
     expect(blocks.every((b) => !b.isExpandable || b.detailLines.length <= 3), isTrue);
   });
+
+  test('배정 목록용 날짜만 — 10/25(일), 10/26(월) 형식', () {
+    final label = formatScheduleDatesOnly([
+      _s(DateTime(2026, 10, 25)),
+      _s(DateTime(2026, 10, 26)),
+      _s(DateTime(2026, 10, 25), sh: 18, eh: 22, id: 'dup'),
+    ]);
+    expect(label, '10/25(일), 10/26(월)');
+    expect(label.contains('09:00'), isFalse);
+    expect(label.contains('매주'), isFalse);
+  });
 }

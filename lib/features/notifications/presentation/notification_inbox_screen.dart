@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_decorations.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
 import '../../../models/notification_item.dart';
 import '../domain/notification_router.dart';
@@ -612,38 +613,20 @@ class _InboxActionBar extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
+                child: StickyActionButton(
+                  label: readLabel,
+                  icon: Icons.done_all_rounded,
+                  variant: StickyActionVariant.primary,
                   onPressed: enabled ? onMarkRead : null,
-                  icon: const Icon(Icons.done_all_rounded, size: 18),
-                  label: Text(
-                    readLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.border),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: OutlinedButton.icon(
+                child: StickyActionButton(
+                  label: deleteLabel,
+                  icon: Icons.delete_outline_rounded,
+                  variant: StickyActionVariant.filled,
                   onPressed: enabled ? onDelete : null,
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                  label: Text(
-                    deleteLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.holiday,
-                    side: BorderSide(
-                      color: AppColors.holiday.withValues(alpha: 0.35),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
                 ),
               ),
             ],

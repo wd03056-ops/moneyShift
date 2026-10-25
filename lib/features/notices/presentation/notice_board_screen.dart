@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/outlined_toggle.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/models.dart';
@@ -309,18 +310,11 @@ class _NoticeComposeScreenState extends State<_NoticeComposeScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            SizedBox(
-              height: 52,
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.5),
-                      )
-                    : const Text('등록하기'),
-              ),
+            StickyActionButton(
+              label: '등록하기',
+              variant: StickyActionVariant.filled,
+              onPressed: _saving ? null : _save,
+              isLoading: _saving,
             ),
           ],
         ),
@@ -464,20 +458,18 @@ class NoticeDetailScreen extends StatelessWidget {
                 ),
                 if (!canManage && !read) ...[
                   const SizedBox(height: 28),
-                  SizedBox(
-                    height: 52,
-                    child: OutlinedButton(
-                      onPressed: () {
-                        MockStore.instance.markNoticeRead(noticeId);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('공지를 확인했습니다.'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
-                      child: const Text('확인함으로 표시'),
-                    ),
+                  StickyActionButton(
+                    label: '확인함으로 표시',
+                    variant: StickyActionVariant.primary,
+                    onPressed: () {
+                      MockStore.instance.markNoticeRead(noticeId);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('공지를 확인했습니다.'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
                   ),
                 ],
               ],

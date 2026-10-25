@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/async_action_guard.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../services/room_invite_service.dart';
 
 /// 초대 코드 1칸 → 코드에 묶인 직책(기본/커스텀)으로 자동 가입
@@ -198,28 +199,11 @@ class _JoinRoomScreenState extends State<JoinRoomScreen> {
                 },
               ),
               const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: FilledButton(
-                  onPressed: _submitting ? null : _join,
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text(
-                          '방 들어가기',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                ),
+              StickyActionButton(
+                label: '방 들어가기',
+                variant: StickyActionVariant.filled,
+                onPressed: _submitting ? null : _join,
+                isLoading: _submitting,
               ),
             ],
           ),

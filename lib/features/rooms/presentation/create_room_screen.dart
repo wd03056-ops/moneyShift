@@ -13,6 +13,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_select_chip.dart';
 import '../../../core/widgets/app_text_input_defaults.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
 import '../../../services/kakao_local_api.dart';
@@ -649,28 +650,11 @@ class _CreateRoomScreenState extends State<CreateRoomScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton(
-                    onPressed: _submitting || busy ? null : _submit,
-                    child: _submitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            '방 생성',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                  ),
+                StickyActionButton(
+                  label: '방 생성',
+                  variant: StickyActionVariant.filled,
+                  onPressed: _submitting || busy ? null : _submit,
+                  isLoading: _submitting,
                 ),
               ],
             ),

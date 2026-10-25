@@ -7,6 +7,9 @@ import '../../../core/time/kst_date_time.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_date_picker.dart';
 import '../../../core/widgets/app_select_chip.dart';
+import '../../../core/widgets/app_snack_bar.dart';
+import '../../../core/widgets/app_text_input_defaults.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/models.dart';
 import '../schedule_store.dart';
@@ -26,9 +29,7 @@ class OwnerChangeRequestSheet extends StatefulWidget {
   }) {
     final block = ScheduleStore.changeBlockReason(schedule);
     if (block != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(block), behavior: SnackBarBehavior.floating),
-      );
+      showAppSnackBar(context, message: block);
       return Future.value(null);
     }
     return showModalBottomSheet<ScheduleModel>(
@@ -139,6 +140,7 @@ class _OwnerChangeRequestSheetState extends State<OwnerChangeRequestSheet> {
   }
 
   Future<void> _submit() async {
+    if (_submitting) return;
     setState(() => _submitting = true);
     try {
       final updated = ScheduleStore.requestChange(
@@ -150,23 +152,16 @@ class _OwnerChangeRequestSheetState extends State<OwnerChangeRequestSheet> {
         substituteWorkerId: _substituteWorkerId,
       );
       if (!mounted) return;
-      Navigator.of(context).pop(updated);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('일정 변경 요청을 보냈습니다. 직원 수락을 기다려 주세요.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      // 시트 pop 전에 루트 ScaffoldMessenger에 등록 (dispose 후 호출 방지)
+      showAppSnackBar(
+        context,
+        message: '일정 변경 요청을 보냈습니다. 직원 수락을 기다려 주세요.',
       );
+      Navigator.of(context).pop(updated);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _submitting = false);
+      showAppSnackBar(context, message: '$e');
+      setState(() => _submitting = false);
     }
   }
 
@@ -326,35 +321,30 @@ class _OwnerChangeRequestSheetState extends State<OwnerChangeRequestSheet> {
             const SizedBox(height: 16),
             Text('변경 사유', style: textTheme.titleSmall),
             const SizedBox(height: 8),
-            TextField(
-              controller: _reasonController,
-              maxLines: 3,
-              enabled: !_submitting,
-              autocorrect: false,
-              enableSuggestions: false,
-              spellCheckConfiguration:
-                  const SpellCheckConfiguration.disabled(),
-              smartDashesType: SmartDashesType.disabled,
-              smartQuotesType: SmartQuotesType.disabled,
-              style: const TextStyle(decoration: TextDecoration.none),
-              decoration: const InputDecoration(
-                hintText: '예: 매장 자재 입고 시간 변경으로 1시간 늦게 출근 가능할까?',
-                border: OutlineInputBorder(),
+            AppElevatedInputShell(
+              child: TextField(
+                controller: _reasonController,
+                maxLines: 3,
+                enabled: !_submitting,
+                autocorrect: false,
+                enableSuggestions: false,
+                spellCheckConfiguration:
+                    const SpellCheckConfiguration.disabled(),
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                style: const TextStyle(decoration: TextDecoration.none),
+                decoration: AppTextInputDefaults.decoration(
+                  hintText: '예: 매장 자재 입고 시간 변경으로 1시간 늦게 출근 가능할까?',
+                  labelText: '변경 사유',
+                ),
               ),
             ),
             const SizedBox(height: 20),
-            SizedBox(
-              height: 52,
-              child: FilledButton(
-                onPressed: _submitting ? null : _submit,
-                child: _submitting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('변경 요청 보내기'),
-              ),
+            StickyActionButton(
+              label: '변경 요청 보내기',
+              variant: StickyActionVariant.filled,
+              onPressed: _submitting ? null : _submit,
+              isLoading: _submitting,
             ),
           ],
         ),

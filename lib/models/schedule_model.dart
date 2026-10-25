@@ -254,6 +254,7 @@ class ScheduleModel extends Equatable {
     String? note,
     String? assignmentBatchId,
     bool? isPeriodBatch,
+    bool clearAssignmentBatch = false,
     bool? isAbsent,
     DateTime? absentMarkedAt,
     String? absentMarkedBy,
@@ -284,8 +285,12 @@ class ScheduleModel extends Equatable {
       overtimeNightPay: overtimeNightPay ?? this.overtimeNightPay,
       payEstimate: payEstimate ?? this.payEstimate,
       note: note ?? this.note,
-      assignmentBatchId: assignmentBatchId ?? this.assignmentBatchId,
-      isPeriodBatch: isPeriodBatch ?? this.isPeriodBatch,
+      assignmentBatchId: clearAssignmentBatch
+          ? null
+          : (assignmentBatchId ?? this.assignmentBatchId),
+      isPeriodBatch: clearAssignmentBatch
+          ? false
+          : (isPeriodBatch ?? this.isPeriodBatch),
       isAbsent: clearAbsent ? false : (isAbsent ?? this.isAbsent),
       absentMarkedAt:
           clearAbsent ? null : (absentMarkedAt ?? this.absentMarkedAt),

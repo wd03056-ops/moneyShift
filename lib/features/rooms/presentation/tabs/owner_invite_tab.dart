@@ -474,32 +474,34 @@ class _CreateRoleNameDialogState extends State<_CreateRoleNameDialog> {
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       title: const Text('직책 추가'),
-      content: TextField(
-        controller: _nameCtrl,
-        autofocus: true,
-        maxLength: 20,
-        textInputAction: TextInputAction.done,
-        textCapitalization: TextCapitalization.none,
-        keyboardType: TextInputType.text,
-        autocorrect: AppTextInputDefaults.autocorrect,
-        enableSuggestions: AppTextInputDefaults.enableSuggestions,
-        spellCheckConfiguration:
-            AppTextInputDefaults.spellCheckConfiguration,
-        smartDashesType: AppTextInputDefaults.smartDashesType,
-        smartQuotesType: AppTextInputDefaults.smartQuotesType,
-        style: const TextStyle(decoration: TextDecoration.none),
-        decoration: const InputDecoration(
-          hintText: '예: 부점장, 야간 매니저',
-          counterText: '',
+      content: AppElevatedInputShell(
+        child: TextField(
+          controller: _nameCtrl,
+          autofocus: true,
+          maxLength: 20,
+          textInputAction: TextInputAction.done,
+          textCapitalization: TextCapitalization.none,
+          keyboardType: TextInputType.text,
+          autocorrect: AppTextInputDefaults.autocorrect,
+          enableSuggestions: AppTextInputDefaults.enableSuggestions,
+          spellCheckConfiguration:
+              AppTextInputDefaults.spellCheckConfiguration,
+          smartDashesType: AppTextInputDefaults.smartDashesType,
+          smartQuotesType: AppTextInputDefaults.smartQuotesType,
+          style: const TextStyle(decoration: TextDecoration.none),
+          decoration: AppTextInputDefaults.decoration(
+            labelText: '직책 이름',
+            hintText: '예: 부점장, 야간 매니저',
+          ).copyWith(counterText: ''),
+          onSubmitted: (_) => _submit(),
         ),
-        onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('취소'),
         ),
-        TextButton(
+        FilledButton(
           onPressed: _submit,
           child: const Text('만들기'),
         ),

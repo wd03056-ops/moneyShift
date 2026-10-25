@@ -53,6 +53,30 @@ class ScheduleSummaryBlock {
   }
 }
 
+/// 사장 배정 목록 카드용 — 날짜·요일만 나열.
+///
+/// 예: `10/25(일), 10/26(월), 10/27(화)`
+/// (시간·매주 패턴·예상 구간은 넣지 않음. 패턴 요약은 [formatScheduleSummary].)
+String formatScheduleDatesOnly(
+  List<ScheduleModel> schedules, {
+  DateFormat? dayFmt,
+  DateFormat? weekdayFmt,
+}) {
+  if (schedules.isEmpty) return '';
+
+  final day = dayFmt ?? DateFormat('M/d');
+  final weekday = weekdayFmt ?? DateFormat('E', 'ko_KR');
+  final uniqueDays = <DateTime>{};
+  for (final s in schedules) {
+    if (s.isAbsent) continue; // 취소·결근 일은 배정 목록에 안 넣음
+    uniqueDays.add(DateOnly.of(s.startTime));
+  }
+  final sorted = uniqueDays.toList()..sort((a, b) => a.compareTo(b));
+  return sorted
+      .map((d) => '${day.format(d)}(${weekday.format(d)})')
+      .join(', ');
+}
+
 /// 배정 카드용 요약.
 ///
 /// - **동일 출퇴근 시각**은 항상 1줄(또는 패턴+추가 1줄)로 압축.

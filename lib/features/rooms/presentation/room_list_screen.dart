@@ -5,7 +5,9 @@ import '../../../core/navigation/app_route_names.dart';
 import '../../../core/navigation/room_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/app_text_input_defaults.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/app_listenables.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
@@ -256,28 +258,30 @@ class _RenameRoomDialogState extends State<_RenameRoomDialog> {
     return AlertDialog(
       backgroundColor: Colors.white,
       title: const Text('매장명 변경'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        textInputAction: TextInputAction.done,
-        autocorrect: false,
-        enableSuggestions: false,
-        spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
-        smartDashesType: SmartDashesType.disabled,
-        smartQuotesType: SmartQuotesType.disabled,
-        style: const TextStyle(decoration: TextDecoration.none),
-        decoration: const InputDecoration(
-          hintText: '매장명',
-          labelText: '매장명',
+      content: AppElevatedInputShell(
+        child: TextField(
+          controller: _controller,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          autocorrect: false,
+          enableSuggestions: false,
+          spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+          smartDashesType: SmartDashesType.disabled,
+          smartQuotesType: SmartQuotesType.disabled,
+          style: const TextStyle(decoration: TextDecoration.none),
+          decoration: AppTextInputDefaults.decoration(
+            hintText: '매장명',
+            labelText: '매장명',
+          ),
+          onSubmitted: (_) => _submit(),
         ),
-        onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('취소'),
         ),
-        TextButton(
+        FilledButton(
           onPressed: _submit,
           child: const Text('저장'),
         ),
@@ -429,16 +433,18 @@ class _EmptyRoomState extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: StickyActionButton(
+                  label: '방 만들기',
+                  variant: StickyActionVariant.primary,
                   onPressed: onCreate,
-                  child: const Text('방 만들기'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: FilledButton(
+                child: StickyActionButton(
+                  label: '초대 코드',
+                  variant: StickyActionVariant.filled,
                   onPressed: onJoin,
-                  child: const Text('초대 코드'),
                 ),
               ),
             ],

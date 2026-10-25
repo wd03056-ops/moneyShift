@@ -13,6 +13,7 @@ import '../../../core/time/date_only.dart';
 import '../../../core/time/kst_date_time.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_select_chip.dart';
+import '../../../core/widgets/app_snack_bar.dart';
 import '../../../core/widgets/outlined_toggle.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../core/widgets/sticky_action_button.dart';
@@ -98,6 +99,7 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   bool _includeNightPay = false;
   bool _includeOvertimePay = false;
   bool _submitting = false;
+  bool _assignCompleted = false;
   final _submitGuard = ActionGuard(cooldown: Duration(milliseconds: 1000));
 
   /// 고정 휴게 선택지(분). 자동계산은 별도 항목.
@@ -125,11 +127,10 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
 
   void _showPastAssignBlocked() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(_pastAssignMessage),
-        behavior: SnackBarBehavior.floating,
-      ),
+    showAppSnackBar(
+      context,
+      message: _pastAssignMessage,
+      aboveStickyActions: true,
     );
   }
 
@@ -633,16 +634,20 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
   Future<void> _submit() async {
     final staff = _selectedStaff;
     if (staff == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('배정할 직원을 선택하세요.')),
+      showAppSnackBar(
+        context,
+        message: '배정할 직원을 선택하세요.',
+        aboveStickyActions: true,
       );
       return;
     }
 
     final days = _effectiveDates;
     if (days.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('근무 날짜를 선택하세요.')),
+      showAppSnackBar(
+        context,
+        message: '근무 날짜를 선택하세요.',
+        aboveStickyActions: true,
       );
       return;
     }
@@ -653,10 +658,10 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
     }
 
     if (days.length > _maxAssignDays) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('한 번에 $_maxAssignDays일까지 배정할 수 있습니다.'),
-        ),
+      showAppSnackBar(
+        context,
+        message: '한 번에 $_maxAssignDays일까지 배정할 수 있습니다.',
+        aboveStickyActions: true,
       );
       return;
     }
@@ -664,24 +669,28 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
     final sampleStart = _combine(days.first, _start);
     final sampleEnd = _combine(days.first, _end);
     if (!sampleEnd.isAfter(sampleStart)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('퇴근 시간은 출근 시간보다 늦어야 합니다.')),
+      showAppSnackBar(
+        context,
+        message: '퇴근 시간은 출근 시간보다 늦어야 합니다.',
+        aboveStickyActions: true,
       );
       return;
     }
 
     final estimate = _computeEstimate();
     if (estimate == null || estimate.total < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('예상 급여를 확인할 수 없습니다.')),
+      showAppSnackBar(
+        context,
+        message: '예상 급여를 확인할 수 없습니다.',
+        aboveStickyActions: true,
       );
       return;
     }
 
-    if (_submitting || !_submitGuard.tryStart()) return;
+    if (_submitting || _assignCompleted || !_submitGuard.tryStart()) return;
     setState(() => _submitting = true);
     try {
-      final created = MockStore.instance.createSchedulesForDates(
+      MockStore.instance.createSchedulesForDates(
         roomId: widget.room.id,
         workerId: staff.userId,
         dates: days,
@@ -698,17 +707,16 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
         asPeriod: _mode == _DatePickMode.range,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            created.length == 1
-                ? '근무가 성공적으로 배정되었습니다'
-                : '근무가 성공적으로 배정되었습니다 (${created.length}일)',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '완료되었습니다',
+        aboveStickyActions: true,
       );
-      Navigator.of(context).pop(created);
+      setState(() {
+        _submitting = false;
+        _assignCompleted = true;
+      });
+      // 배정 후에도 현재 화면·선택 직원/날짜 유지 (강제 pop 없음)
     } catch (e) {
       if (!mounted) return;
       final String message;
@@ -719,15 +727,14 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
       } else {
         message = '근무표 작성 실패: $e';
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: message,
+        aboveStickyActions: true,
       );
+      setState(() => _submitting = false);
     } finally {
       _submitGuard.end();
-      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -1500,9 +1507,14 @@ class _CreateScheduleScreenState extends State<CreateScheduleScreen> {
                     ? '근무 $dayCount일 배정하기'
                     : '근무 배정하기',
                 variant: StickyActionVariant.filled,
-                onPressed: _submit,
-                enabled: !_submitting && staff.isNotEmpty && dayCount > 0,
+                onPressed: (_submitting || _assignCompleted) ? null : _submit,
+                enabled: !_submitting &&
+                    !_assignCompleted &&
+                    staff.isNotEmpty &&
+                    dayCount > 0,
                 isLoading: _submitting,
+                isCompleted: _assignCompleted,
+                completedLabel: '완료됨',
               ),
             ],
           ),

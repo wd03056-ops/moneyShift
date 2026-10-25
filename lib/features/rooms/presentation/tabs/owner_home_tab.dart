@@ -5,6 +5,7 @@ import '../../../../core/ads/widgets/native_ad_card.dart';
 import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/navigation/app_route_names.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_decorations.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
 import '../../../../data/services/api_service.dart';
@@ -238,33 +239,41 @@ class _OwnerHomeTabState extends State<OwnerHomeTab> {
                   margin: EdgeInsets.only(top: 16, bottom: 4),
                 ),
                 const SizedBox(height: 16),
-                _QuickLinkBar(
-                  icon: Icons.check_circle_outline_rounded,
-                  label: '출·퇴근 현황',
-                  onTap: () {
-                    AppNavigation.pushSingleTop(
-                      name: AppRouteNames.ownerCommute(liveRoom.id),
-                      stopAtNames: [AppRouteNames.room(liveRoom.id)],
-                      builder: (_) => OwnerCommuteDashboardScreen(
-                        roomId: liveRoom.id,
+                Row(
+                  children: [
+                    Expanded(
+                      child: _QuickLinkTile(
+                        icon: Icons.check_circle_outline_rounded,
+                        label: '출·퇴근 현황',
+                        onTap: () {
+                          AppNavigation.pushSingleTop(
+                            name: AppRouteNames.ownerCommute(liveRoom.id),
+                            stopAtNames: [AppRouteNames.room(liveRoom.id)],
+                            builder: (_) => OwnerCommuteDashboardScreen(
+                              roomId: liveRoom.id,
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 10),
-                _QuickLinkBar(
-                  icon: Icons.campaign_outlined,
-                  label: '매장 공지사항',
-                  onTap: () {
-                    AppNavigation.pushSingleTop(
-                      name: AppRouteNames.noticeBoard(liveRoom.id),
-                      stopAtNames: [AppRouteNames.room(liveRoom.id)],
-                      builder: (_) => NoticeBoardScreen(
-                        room: liveRoom,
-                        canManage: true,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _QuickLinkTile(
+                        icon: Icons.campaign_outlined,
+                        label: '매장 공지사항',
+                        onTap: () {
+                          AppNavigation.pushSingleTop(
+                            name: AppRouteNames.noticeBoard(liveRoom.id),
+                            stopAtNames: [AppRouteNames.room(liveRoom.id)],
+                            builder: (_) => NoticeBoardScreen(
+                              room: liveRoom,
+                              canManage: true,
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 28),
                 Text(
@@ -468,9 +477,9 @@ class _LaborCostHighlightCard extends StatelessWidget {
   }
 }
 
-/// 슬림 퀵 링크 바
-class _QuickLinkBar extends StatelessWidget {
-  const _QuickLinkBar({
+/// 홈 퀵링크 — 가로 2열 알약 바 (슬림)
+class _QuickLinkTile extends StatelessWidget {
+  const _QuickLinkTile({
     required this.icon,
     required this.label,
     required this.onTap,
@@ -480,32 +489,55 @@ class _QuickLinkBar extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
+  static const double _height = 40;
+
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: AppColors.textPrimary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+    final radius = BorderRadius.circular(_height / 2);
+    return SizedBox(
+      height: _height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: radius,
+          boxShadow: AppDecorations.softShadow,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          borderRadius: radius,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: radius,
+            splashColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 16, color: AppColors.textPrimary),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.3,
+                            height: 1.1,
+                          ),
+                    ),
                   ),
+                ],
+              ),
             ),
           ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            size: 20,
-            color: AppColors.textSecondary,
-          ),
-        ],
+        ),
       ),
     );
   }

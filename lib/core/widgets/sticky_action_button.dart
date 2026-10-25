@@ -4,23 +4,26 @@ import '../theme/app_colors.dart';
 import '../theme/app_decorations.dart';
 
 enum StickyActionVariant {
-  /// 기본 — 흰 배경 + 블루 테두리
+  /// 기본 — 흰 배경 + 그림자 (테두리 없음)
   primary,
 
-  /// 채움 Primary Blue — 시인성 높은 CTA
+  /// 채움 검정 — 시인성 높은 CTA
   filled,
 
-  /// Emerald — 출근 등
+  /// 채움 검정 (출근 등 — 동일 UI)
   success,
 
-  /// Amber — 대기·요청 관련
+  /// 채움 검정 (대기·요청 — 동일 UI)
   warning,
 
-  /// Primary Blue 텍스트 강조 (outline)
+  /// 흰 배경 + 그림자 (outline)
   navy,
 }
 
-/// 핵심 액션용 스티키 버튼 — 블루 CTA / 라이트 톤
+/// 핵심 액션용 스티키 버튼 — 알약형
+///
+/// 가로: 부모 폭을 채움 (바가 좌우 inset으로 ~85–90% 비율 맞춤)
+/// 세로: 가로:세로 ≈ 6.5:1 기준 높이 50
 class StickyActionButton extends StatelessWidget {
   const StickyActionButton({
     super.key,
@@ -30,7 +33,9 @@ class StickyActionButton extends StatelessWidget {
     this.variant = StickyActionVariant.primary,
     this.enabled = true,
     this.isLoading = false,
-    this.showBorder = true,
+    this.isCompleted = false,
+    this.completedLabel = '완료됨',
+    this.showBorder = false,
   });
 
   final String label;
@@ -40,8 +45,18 @@ class StickyActionButton extends StatelessWidget {
   final bool enabled;
   final bool isLoading;
 
-  /// false면 테두리 없이 그림자만 (카드형 입체감). [filled]에서는 무시.
+  /// 작업 완료 후 — 회색 비활성 + [completedLabel]
+  final bool isCompleted;
+  final String completedLabel;
+
+  /// true면 outline 변형에만 테두리. 기본은 그림자만 (입체감).
   final bool showBorder;
+
+  static final Color _doneBg = Colors.grey.shade300;
+  static final Color _doneFg = Colors.grey.shade600;
+
+  /// 참고 모달 CTA 비율 (가로:세로 ≈ 6.5~7:1)
+  static const double _height = 50;
 
   bool get _isFilled =>
       variant == StickyActionVariant.filled ||
@@ -53,21 +68,19 @@ class StickyActionButton extends StatelessWidget {
       case StickyActionVariant.filled:
       case StickyActionVariant.success:
       case StickyActionVariant.warning:
-        return AppColors.buttonOnFill;
+        return Colors.white;
       case StickyActionVariant.primary:
       case StickyActionVariant.navy:
-        return AppColors.primary;
+        return Colors.black;
     }
   }
 
   Color get _bg {
     switch (variant) {
       case StickyActionVariant.filled:
-        return AppColors.buttonFill;
       case StickyActionVariant.success:
-        return AppColors.success;
       case StickyActionVariant.warning:
-        return AppColors.warning;
+        return Colors.black;
       case StickyActionVariant.primary:
       case StickyActionVariant.navy:
         return Colors.white;
@@ -77,32 +90,29 @@ class StickyActionButton extends StatelessWidget {
   Color get _borderColor {
     switch (variant) {
       case StickyActionVariant.filled:
-        return AppColors.buttonFill;
+      case StickyActionVariant.success:
+      case StickyActionVariant.warning:
+        return Colors.black;
       case StickyActionVariant.primary:
       case StickyActionVariant.navy:
-        return AppColors.borderSubtle;
-      case StickyActionVariant.success:
-        return AppColors.success;
-      case StickyActionVariant.warning:
-        return AppColors.warning;
+        return Colors.black;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final active = enabled && onPressed != null;
-    final fg = active
-        ? _fg
-        : (_isFilled
-            ? AppColors.buttonOnFill.withValues(alpha: 0.85)
-            : AppColors.textSecondary);
-    final bg = active
-        ? _bg
-        : (_isFilled ? AppColors.accentMuted : Colors.white);
-    final border = active ? _borderColor : AppColors.border;
-    final radius = AppDecorations.radiusMd; // 12
+    final done = isCompleted;
+    final active = !done && enabled && onPressed != null && !isLoading;
+    final displayLabel = done ? completedLabel : label;
+    final fg = done ? _doneFg : (active ? _fg : _doneFg);
+    final bg = done
+        ? _doneBg
+        : (active ? _bg : (_isFilled ? _doneBg : Colors.white));
+    final border =
+        done ? _doneBg : (active ? _borderColor : AppColors.border);
+    const radius = _height / 2;
 
-    final child = isLoading
+    final child = isLoading && !done
         ? SizedBox(
             width: 22,
             height: 22,
@@ -111,58 +121,61 @@ class StickyActionButton extends StatelessWidget {
               color: fg,
             ),
           )
-        : FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 20, color: fg),
-                  const SizedBox(width: 6),
-                ],
-                Text(
-                  label,
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null && !done) ...[
+                Icon(icon, size: 20, color: fg),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Text(
+                  displayLabel,
                   maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: -0.2,
                     height: 1.2,
                     color: fg,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
 
-    final decoration = _isFilled
-        ? BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(radius),
-            boxShadow: AppDecorations.softShadow,
-          )
-        : AppDecorations.borderedSurface(radius: radius).copyWith(
-            color: bg,
-            border: showBorder
-                ? Border.all(color: border, width: 1.2)
-                : null,
-          );
+    final useOutlineChrome = !_isFilled;
+    // 활성만 은은한 그림자 — 로딩·비활성·완료는 flat
+    final showElevation = active;
+    final decoration = BoxDecoration(
+      color: bg,
+      borderRadius: BorderRadius.circular(radius),
+      border: (useOutlineChrome && !done && showBorder)
+          ? Border.all(color: border, width: 1.2)
+          : null,
+      boxShadow: showElevation
+          ? AppDecorations.softShadow
+          : AppDecorations.noShadow,
+    );
 
     return SizedBox(
       width: double.infinity,
-      height: 54,
+      height: _height,
       child: DecoratedBox(
         decoration: decoration,
         child: Material(
           color: Colors.transparent,
+          elevation: 0,
+          shadowColor: Colors.transparent,
           borderRadius: BorderRadius.circular(radius),
-          child: GestureDetector(
-            onTap: active && !isLoading ? onPressed : null,
-            behavior: HitTestBehavior.opaque,
+          child: InkWell(
+            onTap: active ? onPressed : null,
+            borderRadius: BorderRadius.circular(radius),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Center(child: child),
             ),
           ),
@@ -172,13 +185,15 @@ class StickyActionButton extends StatelessWidget {
   }
 }
 
-/// 화면 하단에 붙는 스티키 액션 바 (1~2개 버튼)
+/// 화면 하단에 붙는 스티키 액션 바
+///
+/// 좌우 inset으로 버튼이 화면 폭의 약 85–90%가 되도록 맞춤 (참고 모달 CTA 비율).
 class StickyActionBar extends StatelessWidget {
   const StickyActionBar({
     super.key,
     required this.children,
     this.safeAreaBottom = true,
-    this.showTopBorder = true,
+    this.showTopBorder = false,
     this.elevated = false,
   });
 
@@ -186,26 +201,31 @@ class StickyActionBar extends StatelessWidget {
   final bool safeAreaBottom;
   final bool showTopBorder;
 
-  /// true면 상단 테두리 + 위쪽 그림자로 본문과 분리
+  /// true면 위쪽 그림자로 본문과 분리 (구분선은 [showTopBorder])
   final bool elevated;
+
+  /// 화면 대비 버튼 영역 ≈ 88% → 한쪽 inset ≈ 6%
+  static const double _sideInset = 28;
 
   @override
   Widget build(BuildContext context) {
+    final buttons = children.length == 1
+        ? children.first
+        : Row(
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) const SizedBox(width: 10),
+                Expanded(child: children[i]),
+              ],
+            ],
+          );
+
     final content = SafeArea(
       top: false,
       bottom: safeAreaBottom,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-        child: children.length == 1
-            ? children.first
-            : Row(
-                children: [
-                  for (var i = 0; i < children.length; i++) ...[
-                    if (i > 0) const SizedBox(width: 12),
-                    Expanded(child: children[i]),
-                  ],
-                ],
-              ),
+        padding: const EdgeInsets.fromLTRB(_sideInset, 12, _sideInset, 16),
+        child: buttons,
       ),
     );
 
@@ -214,7 +234,7 @@ class StickyActionBar extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: showTopBorder || elevated
+        border: showTopBorder
             ? const Border(
                 top: BorderSide(color: AppColors.border, width: 1),
               )
@@ -222,8 +242,8 @@ class StickyActionBar extends StatelessWidget {
         boxShadow: elevated
             ? const [
                 BoxShadow(
-                  color: Color(0x14000000),
-                  blurRadius: 12,
+                  color: Color(0x0F000000),
+                  blurRadius: 10,
                   offset: Offset(0, -4),
                   spreadRadius: 0,
                 ),

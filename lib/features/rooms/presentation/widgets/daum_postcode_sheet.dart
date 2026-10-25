@@ -292,15 +292,9 @@ class _KakaoAddressSearchSheetState extends State<_KakaoAddressSearchSheet> {
                   ),
                   const SizedBox(width: 8),
                   SizedBox(
-                    height: 48,
+                    height: 50,
                     child: FilledButton(
                       onPressed: _searching ? null : _submitSearch,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.buttonFill,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 18),
-                        shape: const StadiumBorder(),
-                      ),
                       child: _searching
                           ? const SizedBox(
                               width: 18,

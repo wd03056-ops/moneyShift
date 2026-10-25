@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +9,7 @@ import '../../../../core/navigation/app_route_names.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/time/kst_date_time.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
 import '../../../../core/widgets/sticky_action_button.dart';
 import '../../../../mock/mock_store.dart';
@@ -100,6 +101,8 @@ class _OwnerScheduleTabState extends State<OwnerScheduleTab> {
     final calendarView = widget.calendarView;
 
     return FixedBottomPage(
+      // 달력 뷰: 상단 달력 고정 + 하단 목록만 스크롤
+      bodyScrollable: !calendarView,
       bottom: StickyActionBar(
         safeAreaBottom: false,
         children: [
@@ -119,13 +122,15 @@ class _OwnerScheduleTabState extends State<OwnerScheduleTab> {
                   onCalendarViewChanged: widget.onCalendarViewChanged,
                 ),
                 const SizedBox(height: 12),
-                StoreCalendarTab(
-                  room: room,
-                  showHeader: false,
-                  embedded: true,
-                  onSelectedDayChanged: (day) {
-                    _calendarSelectedDay = day;
-                  },
+                Expanded(
+                  child: StoreCalendarTab(
+                    room: room,
+                    showHeader: false,
+                    embedded: true,
+                    onSelectedDayChanged: (day) {
+                      _calendarSelectedDay = day;
+                    },
+                  ),
                 ),
               ],
             )
@@ -313,23 +318,33 @@ class _StaffAssignmentGroup {
 
   int get totalEstimatedPay => schedules.fold<int>(
         0,
-        (sum, s) => sum + (s.estimatedPay ?? 0),
+        (sum, s) => s.isAbsent ? sum : sum + (s.estimatedPay ?? 0),
       );
 
   /// 상세 시트용 — 기간 배정은 한 덩어리로 묶음
+  /// (결근·취소된 날·변경요청 중인 날은 묶음에서 빼 개별 표시)
   List<_AssignmentChunk> get detailChunks {
     final chunks = <_AssignmentChunk>[];
     final seenPeriodBatches = <String>{};
 
     for (final s in schedules) {
       final batchId = s.assignmentBatchId;
-      if (s.isPeriodBatch && batchId != null) {
+      if (s.isPeriodBatch &&
+          batchId != null &&
+          !s.isAbsent &&
+          !s.isChangeRequested) {
         if (seenPeriodBatches.contains(batchId)) continue;
         seenPeriodBatches.add(batchId);
         final batch = schedules
-            .where((x) => x.assignmentBatchId == batchId)
+            .where(
+              (x) =>
+                  x.assignmentBatchId == batchId &&
+                  !x.isAbsent &&
+                  !x.isChangeRequested,
+            )
             .toList()
           ..sort((a, b) => a.startTime.compareTo(b.startTime));
+        if (batch.isEmpty) continue;
         chunks.add(_AssignmentChunk(schedules: batch, isPeriod: true));
         continue;
       }
@@ -782,27 +797,21 @@ class _StaffAssignmentDetailSheet extends StatelessWidget {
                                 try {
                                   if (live.isAbsent) {
                                     store.clearScheduleAbsent(live.id);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('결근 처리를 해제했습니다.'),
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
+                                    showAppSnackBar(
+                                      context,
+                                      message: '결근 처리를 해제했습니다.',
                                     );
                                   } else {
                                     store.markScheduleAbsent(live.id);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('결근 처리했습니다.'),
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
+                                    showAppSnackBar(
+                                      context,
+                                      message: '결근 처리했습니다.',
                                     );
                                   }
                                 } catch (e) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('$e'),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
+                                  showAppSnackBar(
+                                    context,
+                                    message: '$e',
                                   );
                                 }
                               },
@@ -841,7 +850,9 @@ class _StaffAssignmentDetailSheet extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
+                  child: StickyActionButton(
+                    label: '근무 추가',
+                    variant: StickyActionVariant.primary,
                     onPressed: () {
                       final member = _member;
                       if (member == null) return;
@@ -855,12 +866,13 @@ class _StaffAssignmentDetailSheet extends StatelessWidget {
                         ),
                       );
                     },
-                    child: const Text('근무 추가'),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: FilledButton(
+                  child: StickyActionButton(
+                    label: '상세 관리',
+                    variant: StickyActionVariant.filled,
                     onPressed: () {
                       final member = _member;
                       if (member == null) return;
@@ -877,7 +889,6 @@ class _StaffAssignmentDetailSheet extends StatelessWidget {
                         ),
                       );
                     },
-                    child: const Text('상세 관리'),
                   ),
                 ),
               ],
@@ -917,17 +928,13 @@ class _StaffChangeApprovalCardState extends State<_StaffChangeApprovalCard> {
         approve: approve,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(approve ? '일정 변경을 승인했습니다.' : '일정 변경을 거절했습니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: approve ? '일정 변경을 승인했습니다.' : '일정 변경을 거절했습니다.',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
-      );
+      showAppSnackBar(context, message: '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -977,22 +984,19 @@ class _StaffChangeApprovalCardState extends State<_StaffChangeApprovalCard> {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: StickyActionButton(
+                  label: '거절',
+                  variant: StickyActionVariant.primary,
                   onPressed: _busy ? null : () => _resolve(false),
-                  child: const Text('거절'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: FilledButton(
+                child: StickyActionButton(
+                  label: '승인',
+                  variant: StickyActionVariant.filled,
                   onPressed: _busy ? null : () => _resolve(true),
-                  child: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('승인'),
+                  isLoading: _busy,
                 ),
               ),
             ],
@@ -1029,14 +1033,10 @@ class _SwapApprovalCardState extends State<_SwapApprovalCard> {
     try {
       await Future<void>.sync(action);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(okMsg), behavior: SnackBarBehavior.floating),
-      );
+      showAppSnackBar(context, message: okMsg);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
-      );
+      showAppSnackBar(context, message: '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1090,32 +1090,29 @@ class _SwapApprovalCardState extends State<_SwapApprovalCard> {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: StickyActionButton(
+                  label: '거절',
+                  variant: StickyActionVariant.primary,
                   onPressed: _busy
                       ? null
                       : () => _run(
                             () => store.rejectShiftSwap(swap.id),
                             '대타 요청을 거절했습니다.',
                           ),
-                  child: const Text('거절'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: FilledButton(
+                child: StickyActionButton(
+                  label: '승인',
+                  variant: StickyActionVariant.filled,
                   onPressed: _busy
                       ? null
                       : () => _run(
                             () => store.approveShiftSwap(swap.id),
                             '대타 승인 · 근무자가 $to(으)로 변경되었습니다.',
                           ),
-                  child: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('승인'),
+                  isLoading: _busy,
                 ),
               ),
             ],

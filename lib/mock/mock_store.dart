@@ -45,6 +45,10 @@ class MockStore extends ChangeNotifier {
   final Set<String> _attendanceSyncInFlight = {};
   final Set<String> _attendanceSyncedRooms = {};
 
+  /// 방별 근무표 Firestore 동기화 가드
+  final Set<String> _scheduleSyncInFlight = {};
+  final Set<String> _scheduleSyncedRooms = {};
+
   void _bumpDataRevision() {
     dataRevision++;
     LaborCostMemo.invalidate();
@@ -228,6 +232,97 @@ class MockStore extends ChangeNotifier {
       });
     } catch (e) {
       debugPrint('[MockStore] room_members sync skip: $e');
+    }
+  }
+
+  /// 근무표 → Firestore `schedules` (배정·확인·변경 등 UI SSOT와 동기화)
+  void _persistSchedule(ScheduleModel schedule, {bool forCreate = false}) {
+    if (Firebase.apps.isEmpty) return;
+    try {
+      final data = <String, dynamic>{
+        ...schedule.toFirestore(forCreate: forCreate),
+        // ScheduleAssign / Cloud Functions 호환 별칭
+        'storeId': schedule.roomId,
+        'createdBy': schedule.assignedBy,
+        'workerUid': schedule.workerId,
+        if (schedule.basePay != null) 'hourlyWage': schedule.basePay,
+      };
+      FirebaseFirestore.instance
+          .collection(FirestorePaths.schedules)
+          .doc(schedule.id)
+          .set(data, SetOptions(merge: true))
+          .then((_) {
+        debugPrint('[MockStore] schedules sync ok ${schedule.id}');
+      }).catchError((Object e) {
+        debugPrint(
+          '[MockStore] schedules sync FAIL id=${schedule.id}: $e',
+        );
+      });
+    } catch (e) {
+      debugPrint('[MockStore] schedules sync skip: $e');
+    }
+  }
+
+  void _deleteScheduleRemote(String scheduleId) {
+    if (Firebase.apps.isEmpty || scheduleId.isEmpty) return;
+    try {
+      FirebaseFirestore.instance
+          .collection(FirestorePaths.schedules)
+          .doc(scheduleId)
+          .delete()
+          .then((_) {
+        debugPrint('[MockStore] schedules delete ok $scheduleId');
+      }).catchError((Object e) {
+        debugPrint('[MockStore] schedules delete FAIL id=$scheduleId: $e');
+      });
+    } catch (e) {
+      debugPrint('[MockStore] schedules delete skip: $e');
+    }
+  }
+
+  /// 방 근무표를 Firestore에서 병합 (앱 재실행·타 기기 정합성)
+  Future<void> syncSchedulesForRoom(String roomId) async {
+    if (roomId.isEmpty || Firebase.apps.isEmpty) return;
+    if (_scheduleSyncedRooms.contains(roomId)) return;
+    if (!_scheduleSyncInFlight.add(roomId)) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection(FirestorePaths.schedules)
+          .where('roomId', isEqualTo: roomId)
+          .get();
+      var merged = 0;
+      for (final doc in snap.docs) {
+        try {
+          final remote = ScheduleModel.fromFirestore(doc);
+          final local = schedules[remote.id];
+          // 원격이 있으면 덮어씀 (확인·변경 상태 교차 기기 반영)
+          // 로컬에만 있는 배정(아직 persist 전)은 유지
+          if (local == null ||
+              (remote.updatedAt != null &&
+                  (local.updatedAt == null ||
+                      remote.updatedAt!.isAfter(local.updatedAt!))) ||
+              remote.isConfirmed != local.isConfirmed ||
+              remote.status != local.status) {
+            schedules[remote.id] = remote;
+            merged++;
+          }
+        } catch (e) {
+          debugPrint('[MockStore] schedule parse skip ${doc.id}: $e');
+        }
+      }
+      _scheduleSyncedRooms.add(roomId);
+      if (merged > 0) {
+        _bumpDataRevision();
+        notifyListeners();
+      }
+      debugPrint(
+        '[MockStore] schedules sync room=$roomId '
+        'docs=${snap.docs.length} merged=$merged',
+      );
+    } catch (e) {
+      debugPrint('[MockStore] schedules sync FAIL room=$roomId: $e');
+    } finally {
+      _scheduleSyncInFlight.remove(roomId);
     }
   }
 
@@ -1080,6 +1175,7 @@ class MockStore extends ChangeNotifier {
     );
     _bumpDataRevision();
     notifyListeners();
+    _persistSchedule(schedule, forCreate: true);
 
     // 2) 근무 배정 → 알바 (일괄 배정 시 첫 건만 + burst/content dedupe)
     if (notifyWorker) {
@@ -1295,6 +1391,7 @@ class MockStore extends ChangeNotifier {
     );
     schedules[scheduleId] = updated;
     notifyListeners();
+    _persistSchedule(updated);
 
     // 7) 결근 처리 → 해당 알바
     final roomName = rooms[schedule.roomId]?.name ?? '매장';
@@ -1332,6 +1429,7 @@ class MockStore extends ChangeNotifier {
     );
     schedules[scheduleId] = updated;
     notifyListeners();
+    _persistSchedule(updated);
     return updated;
   }
 
@@ -1351,7 +1449,8 @@ class MockStore extends ChangeNotifier {
     var didConfirm = false;
     ScheduleModel result;
 
-    // 기간 선택 배정은 같은 방·같은 묶음만 한 번에 확인 (타 방 데이터 혼선 방지)
+    // 기간 선택 배정은 같은 방·같은 묶음만 한 번에 확인
+    // (결근·취소·변경요청 중인 날은 제외 — 하루 취소 후 전체가 확정·소실되는 것 방지)
     final batchId = schedule.assignmentBatchId;
     if (schedule.isPeriodBatch && batchId != null) {
       ScheduleModel? latest;
@@ -1360,12 +1459,15 @@ class MockStore extends ChangeNotifier {
         if (s.assignmentBatchId != batchId) continue;
         if (s.workerId != user.uid) continue;
         if (s.isConfirmed) continue;
+        if (s.isAbsent) continue;
+        if (s.isChangeRequested) continue;
         final updated = s.copyWith(
           isConfirmed: true,
           confirmedAt: now,
           updatedAt: now,
         );
         schedules[s.id] = updated;
+        _persistSchedule(updated);
         latest = updated;
         didConfirm = true;
       }
@@ -1384,6 +1486,7 @@ class MockStore extends ChangeNotifier {
         updatedAt: now,
       );
       schedules[scheduleId] = result;
+      _persistSchedule(result);
       didConfirm = true;
     }
 
@@ -1430,6 +1533,7 @@ class MockStore extends ChangeNotifier {
         updatedAt: now,
       );
       schedules[s.id] = updated;
+      _persistSchedule(updated);
       sample ??= updated;
       count++;
     }
@@ -1573,6 +1677,7 @@ class MockStore extends ChangeNotifier {
     );
     schedules[scheduleId] = updated;
     notifyListeners();
+    _persistSchedule(updated);
 
     final ownerUid = rooms[schedule.roomId]?.ownerId;
     if (ownerUid != null &&
@@ -1657,6 +1762,7 @@ class MockStore extends ChangeNotifier {
     }
     schedules[scheduleId] = updated;
     notifyListeners();
+    _persistSchedule(updated);
 
     AppNotificationDispatcher.scheduleChangeResult(
       workerUid: schedule.workerId,
@@ -1743,6 +1849,7 @@ class MockStore extends ChangeNotifier {
     );
     schedules[scheduleId] = updated;
     notifyListeners();
+    _persistSchedule(updated);
 
     final roomName = rooms[schedule.roomId]?.name ?? '매장';
     AppNotificationDispatcher.ownerScheduleChangeRequested(
@@ -1783,12 +1890,43 @@ class MockStore extends ChangeNotifier {
     ScheduleModel updated;
     switch (pending.changeType) {
       case ScheduleChangeType.cancel:
+        // 해당 일만 배정 취소. 기간 묶음 형제는 건드리지 않음.
+        // 미확인 배정 → 문서 삭제 / 이미 확인된 날 → 결근+묶음 분리
+        if (!schedule.isConfirmed) {
+          final removed = schedule.copyWith(
+            status: ScheduleStatus.normal,
+            clearPendingChange: true,
+            clearAssignmentBatch: true,
+            reason: pending.reason,
+            estimatedPay: 0,
+            basePay: 0,
+            weeklyHolidayPay: 0,
+            overtimeNightPay: 0,
+            updatedAt: now,
+          );
+          schedules.remove(scheduleId);
+          notifyListeners();
+          _deleteScheduleRemote(scheduleId);
+          final ownerUid = rooms[schedule.roomId]?.ownerId;
+          if (ownerUid != null &&
+              prefsForRoom(schedule.roomId).notifyScheduleChanges) {
+            AppNotificationDispatcher.staffScheduleChangeResult(
+              ownerUid: ownerUid,
+              staffDisplayName: user.displayName,
+              approved: true,
+              storeId: schedule.roomId,
+              scheduleId: scheduleId,
+            );
+          }
+          return removed;
+        }
         updated = schedule.copyWith(
           isAbsent: true,
           absentMarkedAt: now,
           absentMarkedBy: pending.requestedBy,
           status: ScheduleStatus.normal,
           clearPendingChange: true,
+          clearAssignmentBatch: true,
           reason: pending.reason,
           estimatedPay: 0,
           basePay: 0,
@@ -1798,10 +1936,12 @@ class MockStore extends ChangeNotifier {
         );
       case ScheduleChangeType.substitute:
         final subId = pending.substituteWorkerId!;
+        // 대타 수락 시 기간 묶음에서 분리 (한 날만 이직)
         updated = schedule.copyWith(
           workerId: subId,
           status: ScheduleStatus.normal,
           clearPendingChange: true,
+          clearAssignmentBatch: true,
           reason: pending.reason,
           isConfirmed: false,
           confirmedAt: null,
@@ -1838,6 +1978,7 @@ class MockStore extends ChangeNotifier {
 
     schedules[scheduleId] = updated;
     notifyListeners();
+    _persistSchedule(updated);
 
     final ownerUid = rooms[schedule.roomId]?.ownerId;
     if (ownerUid != null &&
@@ -1878,7 +2019,7 @@ class MockStore extends ChangeNotifier {
 
     final now = KstDateTime.now();
     final reasonText = rejectReason?.trim();
-    schedules[scheduleId] = schedule.copyWith(
+    final rejected = schedule.copyWith(
       status: ScheduleStatus.normal,
       clearPendingChange: true,
       reason: reasonText != null && reasonText.isNotEmpty
@@ -1886,8 +2027,10 @@ class MockStore extends ChangeNotifier {
           : '변경 요청 거절',
       updatedAt: now,
     );
+    schedules[scheduleId] = rejected;
 
     notifyListeners();
+    _persistSchedule(rejected);
 
     final ownerUid = rooms[schedule.roomId]?.ownerId;
     if (ownerUid != null &&
@@ -1900,7 +2043,7 @@ class MockStore extends ChangeNotifier {
         scheduleId: scheduleId,
       );
     }
-    return schedules[scheduleId]!;
+    return rejected;
   }
 
   /// 확인 대기 단위 수 — 기간 배정 묶음은 1건으로 집계
@@ -2201,13 +2344,14 @@ class MockStore extends ChangeNotifier {
     if (schedule == null) throw StateError('근무표를 찾을 수 없습니다.');
 
     final fromName = memberDisplayName(req.roomId, req.fromWorkerId);
-    schedules[req.scheduleId] = schedule.copyWith(
+    final swapped = schedule.copyWith(
       workerId: req.toWorkerId,
       isConfirmed: false,
       confirmedAt: null,
       note: '대타 승인 · 요청자 $fromName · 사유: ${req.reason}',
       updatedAt: KstDateTime.now(),
     );
+    schedules[req.scheduleId] = swapped;
 
     final updated = req.copyWith(
       status: ShiftSwapStatus.approved,
@@ -2215,6 +2359,7 @@ class MockStore extends ChangeNotifier {
     );
     shiftSwaps[swapId] = updated;
     notifyListeners();
+    _persistSchedule(swapped);
 
     // 5-3) 사장 최종 승인 → A, B
     final roomName = rooms[req.roomId]?.name ?? '매장';
@@ -2704,12 +2849,14 @@ class MockStore extends ChangeNotifier {
       if (sid != null) {
         final s = schedules[sid];
         if (s != null && !s.isAbsent) {
-          schedules[sid] = s.copyWith(
+          final marked = s.copyWith(
             isAbsent: true,
             absentMarkedAt: KstDateTime.now(),
             absentMarkedBy: req.requestedBy,
             updatedAt: KstDateTime.now(),
           );
+          schedules[sid] = marked;
+          _persistSchedule(marked);
         }
       }
       return;
@@ -2721,10 +2868,12 @@ class MockStore extends ChangeNotifier {
     if (sid != null) {
       final s = schedules[sid];
       if (s != null && s.isAbsent) {
-        schedules[sid] = s.copyWith(
+        final cleared = s.copyWith(
           clearAbsent: true,
           updatedAt: KstDateTime.now(),
         );
+        schedules[sid] = cleared;
+        _persistSchedule(cleared);
       }
     }
 

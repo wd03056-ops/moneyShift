@@ -3,10 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/constants/firestore_paths.dart';
+import '../../../mock/mock_store.dart';
 import '../../../models/attendance_session_model.dart';
+import '../../../models/employee_contract_model.dart';
 import '../../../models/enums/member_role.dart';
 import '../../../models/enums/schedule_status.dart';
 import '../../../models/geo_location.dart';
+import '../../../models/room_member_model.dart';
 import '../../../models/schedule_model.dart';
 import '../../../models/store_member_model.dart';
 import '../../../models/store_model.dart';
@@ -31,6 +34,7 @@ class MockFirestoreSeedService {
     try {
       await _ensureStore(ownerUid);
       await _ensureMembers(ownerUid);
+      await _ensureRoomMembers(ownerUid);
       await _ensureSchedule(ownerUid);
       await _ensureAttendance(ownerUid);
       debugPrint('[MockSeed] demo data ready ownerUid=$ownerUid');
@@ -88,12 +92,53 @@ class MockFirestoreSeedService {
     }
   }
 
+  /// UI MockStore 데모 방(`demo_room_shared`) room_members — Rules·스케줄 쓰기용
+  Future<void> _ensureRoomMembers(String ownerUid) async {
+    const roomId = MockStore.demoRoomId;
+    final members = [
+      RoomMemberModel(
+        roomId: roomId,
+        userId: ownerUid,
+        role: MemberRole.owner,
+        displayName: '테스트 사용자',
+        contract: const EmployeeContractModel(hourlyWage: 10320),
+      ),
+      RoomMemberModel(
+        roomId: roomId,
+        userId: MockAuthService.staffUid,
+        role: MemberRole.parttime,
+        displayName: '테스트 알바',
+        contract: const EmployeeContractModel(hourlyWage: 10320),
+      ),
+    ];
+    for (final m in members) {
+      final ref = _db.collection(FirestorePaths.roomMembers).doc(m.docId);
+      if ((await ref.get()).exists) continue;
+      await ref.set(m.toFirestore(forCreate: true));
+      debugPrint('[MockSeed] room_member created ${ref.path}');
+    }
+  }
+
   Future<void> _ensureSchedule(String ownerUid) async {
     final ref = _db
         .collection(FirestorePaths.schedules)
         .doc(MockAuthService.demoScheduleId);
-    if ((await ref.get()).exists) {
-      debugPrint('[MockSeed] schedule exists ${ref.path}');
+    final existing = await ref.get();
+    if (existing.exists) {
+      // 구 시드(test_store_001) → UI 데모 방 ID로 맞춤
+      final data = existing.data();
+      if (data != null && data['roomId'] != MockStore.demoRoomId) {
+        await ref.set({
+          'roomId': MockStore.demoRoomId,
+          'storeId': MockStore.demoRoomId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        debugPrint(
+          '[MockSeed] schedule roomId migrated → ${MockStore.demoRoomId}',
+        );
+      } else {
+        debugPrint('[MockSeed] schedule exists ${ref.path}');
+      }
       return;
     }
 
@@ -107,9 +152,10 @@ class MockFirestoreSeedService {
     );
     final end = start.add(const Duration(hours: 5));
 
+    // UI 데모 방과 동일 roomId — RoomDetail syncSchedulesForRoom 과 맞춤
     final schedule = ScheduleModel(
       id: MockAuthService.demoScheduleId,
-      roomId: MockAuthService.demoStoreId,
+      roomId: MockStore.demoRoomId,
       workerId: MockAuthService.staffUid,
       assignedBy: ownerUid,
       date: today,
@@ -123,7 +169,7 @@ class MockFirestoreSeedService {
     );
     await ref.set({
       ...schedule.toFirestore(forCreate: true),
-      'storeId': MockAuthService.demoStoreId,
+      'storeId': MockStore.demoRoomId,
       'createdBy': ownerUid,
       'workerUid': MockAuthService.staffUid,
       'hourlyWage': 10320,

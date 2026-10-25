@@ -5,6 +5,7 @@ import '../../../core/calendar/snappy_calendar.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_option_picker.dart';
+import '../../../core/widgets/app_snack_bar.dart';
 import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_session.dart';
 import '../../../mock/mock_store.dart';
@@ -17,11 +18,9 @@ Future<bool> showShiftSwapRequestSheet({
 }) async {
   if (MockStore.instance.isScheduleClockedOut(schedule)) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('이미 퇴근한 근무는 대타 요청을 할 수 없습니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '이미 퇴근한 근무는 대타 요청을 할 수 없습니다.',
       );
     }
     return false;
@@ -63,20 +62,18 @@ class _ShiftSwapRequestSheetState extends State<_ShiftSwapRequestSheet> {
   Future<void> _submit() async {
     final toId = _toWorkerId;
     if (toId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('대타를 부탁할 동료를 선택해 주세요.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '대타를 부탁할 동료를 선택해 주세요.',
+        aboveStickyActions: true,
       );
       return;
     }
     if (MockStore.instance.isScheduleClockedOut(widget.schedule)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('이미 퇴근한 근무는 대타 요청을 할 수 없습니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '이미 퇴근한 근무는 대타 요청을 할 수 없습니다.',
+        aboveStickyActions: true,
       );
       return;
     }
@@ -92,11 +89,10 @@ class _ShiftSwapRequestSheetState extends State<_ShiftSwapRequestSheet> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$e'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '$e',
+        aboveStickyActions: true,
       );
     } finally {
       _submitGuard.end();

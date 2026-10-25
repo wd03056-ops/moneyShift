@@ -59,9 +59,12 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     // push 직후 발행된 의도 소비 (리스너 등록 전 발행분)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _onRoomNavIntent();
-      // 출퇴근·급여 SSOT 보강: Firestore attendance_logs 병합 (1회/방)
+      // 출퇴근·근무표 SSOT 보강: Firestore 병합 (1회/방)
       unawaited(
         MockStore.instance.syncAttendanceLogsForRoom(widget.roomId),
+      );
+      unawaited(
+        MockStore.instance.syncSchedulesForRoom(widget.roomId),
       );
     });
   }

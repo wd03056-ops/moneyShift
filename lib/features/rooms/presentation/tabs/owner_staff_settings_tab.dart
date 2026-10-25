@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/async_action_guard.dart';
 import '../../../../core/widgets/app_select_chip.dart';
+import '../../../../core/widgets/app_text_input_defaults.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
+import '../../../../core/widgets/sticky_action_button.dart';
 import '../../../../mock/app_listenables.dart';
 import '../../../../mock/mock_store.dart';
 import '../../../../models/models.dart';
@@ -301,28 +303,30 @@ class _TextInputDialogState extends State<_TextInputDialog> {
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       title: Text(widget.title),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        autocorrect: false,
-        enableSuggestions: false,
-        spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
-        smartDashesType: SmartDashesType.disabled,
-        smartQuotesType: SmartQuotesType.disabled,
-        style: const TextStyle(decoration: TextDecoration.none),
-        decoration: InputDecoration(
-          labelText: widget.label,
-          hintText: widget.hint,
+      content: AppElevatedInputShell(
+        child: TextField(
+          controller: _controller,
+          autofocus: true,
+          autocorrect: false,
+          enableSuggestions: false,
+          spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+          smartDashesType: SmartDashesType.disabled,
+          smartQuotesType: SmartQuotesType.disabled,
+          style: const TextStyle(decoration: TextDecoration.none),
+          decoration: AppTextInputDefaults.decoration(
+            labelText: widget.label,
+            hintText: widget.hint,
+          ),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (v) => Navigator.pop(context, v.trim()),
         ),
-        textInputAction: TextInputAction.done,
-        onSubmitted: (v) => Navigator.pop(context, v.trim()),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('취소'),
         ),
-        TextButton(
+        FilledButton(
           onPressed: () => Navigator.pop(context, _controller.text.trim()),
           child: const Text('저장'),
         ),
@@ -533,22 +537,25 @@ class _LocationRadiusSheetState extends State<_LocationRadiusSheet> {
             ],
           ),
           const SizedBox(height: 6),
-          TextField(
-            controller: _addressController,
-            readOnly: true,
-            showCursor: false,
-            enableInteractiveSelection: false,
-            style: const TextStyle(
-              decoration: TextDecoration.none,
-              color: AppColors.textPrimary,
+          AppElevatedInputShell(
+            child: TextField(
+              controller: _addressController,
+              readOnly: true,
+              showCursor: false,
+              enableInteractiveSelection: false,
+              style: const TextStyle(
+                decoration: TextDecoration.none,
+                color: AppColors.textPrimary,
+              ),
+              decoration: AppTextInputDefaults.decoration(
+                labelText: '매장 주소',
+                hintText: _displayAddress.isEmpty
+                    ? '주소 검색으로 선택하세요'
+                    : null,
+              ),
+              maxLines: 2,
+              onTap: busy ? null : _openPostcodeSearch,
             ),
-            decoration: InputDecoration(
-              hintText: _displayAddress.isEmpty
-                  ? '주소 검색으로 선택하세요'
-                  : null,
-            ),
-            maxLines: 2,
-            onTap: busy ? null : _openPostcodeSearch,
           ),
           if (_resolving) ...[
             const SizedBox(height: 8),
@@ -578,22 +585,11 @@ class _LocationRadiusSheetState extends State<_LocationRadiusSheet> {
             ],
           ),
           const SizedBox(height: 20),
-          SizedBox(
-            height: 52,
-            child: OutlinedButton(
-              onPressed: busy ? null : _save,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: const BorderSide(color: AppColors.border),
-              ),
-              child: _saving
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2.5),
-                    )
-                  : const Text('저장'),
-            ),
+          StickyActionButton(
+            label: '저장',
+            variant: StickyActionVariant.filled,
+            onPressed: busy ? null : _save,
+            isLoading: _saving,
           ),
         ],
       ),

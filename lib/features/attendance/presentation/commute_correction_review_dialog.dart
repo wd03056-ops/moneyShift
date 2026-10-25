@@ -158,10 +158,6 @@ class _CommuteCorrectionReviewDialogState
           ),
           FilledButton(
             onPressed: _busy ? null : () => _resolve(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.buttonFill,
-              foregroundColor: AppColors.buttonOnFill,
-            ),
             child: _busy
                 ? const SizedBox(
                     width: 18,

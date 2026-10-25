@@ -9,6 +9,7 @@ import '../../../../core/permissions/location_disclosure.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/time/kst_date_time.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/app_snack_bar.dart';
 import '../../../../core/widgets/outlined_toggle.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
 import '../../../../core/widgets/sticky_action_button.dart';
@@ -166,25 +167,19 @@ class _StaffAttendanceTabState extends State<StaffAttendanceTab> {
             )
           : 0;
       final currency = NumberFormat('#,###');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isClockIn
-                ? (isRe ? '재출근이 완료되었습니다.' : '출근이 완료되었습니다.')
-                : dayPay > 0
-                    ? '${isRe ? '재퇴근' : '퇴근'} 완료 · 오늘 급여 ${currency.format(dayPay)}원'
-                    : (isRe ? '재퇴근이 완료되었습니다.' : '퇴근이 완료되었습니다.'),
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: isClockIn
+            ? (isRe ? '재출근이 완료되었습니다.' : '출근이 완료되었습니다.')
+            : dayPay > 0
+                ? '${isRe ? '재퇴근' : '퇴근'} 완료 · 오늘 급여 ${currency.format(dayPay)}원'
+                : (isRe ? '재퇴근이 완료되었습니다.' : '퇴근이 완료되었습니다.'),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('위치 확인에 실패했습니다: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '위치 확인에 실패했습니다: $e',
       );
     } finally {
       _clockGuard.end();
@@ -892,14 +887,10 @@ class _IncomingSwapCardState extends State<_IncomingSwapCard> {
     try {
       action();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(okMsg), behavior: SnackBarBehavior.floating),
-      );
+      showAppSnackBar(context, message: okMsg);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), behavior: SnackBarBehavior.floating),
-      );
+      showAppSnackBar(context, message: '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -973,32 +964,29 @@ class _IncomingSwapCardState extends State<_IncomingSwapCard> {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: StickyActionButton(
+                  label: '거절하기',
+                  variant: StickyActionVariant.primary,
                   onPressed: _busy
                       ? null
                       : () => _run(
                             () => store.rejectShiftSwapAsColleague(swap.id),
                             '대타 요청을 거절했습니다.',
                           ),
-                  child: const Text('거절하기'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: FilledButton(
+                child: StickyActionButton(
+                  label: '수락하기',
+                  variant: StickyActionVariant.filled,
                   onPressed: _busy
                       ? null
                       : () => _run(
                             () => store.acceptShiftSwapAsColleague(swap.id),
                             '대타를 수락했습니다. 사장님 승인을 기다려 주세요.',
                           ),
-                  child: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('수락하기'),
+                  isLoading: _busy,
                 ),
               ),
             ],

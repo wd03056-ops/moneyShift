@@ -63,9 +63,11 @@ class FixedBottomPage extends StatelessWidget {
     this.bottom,
     this.padding = const EdgeInsets.fromLTRB(20, 16, 20, 24),
     this.safeTop = false,
+    this.bodyScrollable = true,
   });
 
-  /// 스크롤 영역 콘텐츠 ([Expanded]/[Flexible] 금지)
+  /// 본문. [bodyScrollable]이 true면 스크롤 영역 ([Expanded]/[Flexible] 금지).
+  /// false면 [Column] 안에서 [Expanded] 사용 가능 (달력 고정 + 목록 스크롤 등).
   final Widget body;
 
   /// 화면 하단 고정 영역 (버튼 바 등). null이면 스크롤만.
@@ -76,6 +78,9 @@ class FixedBottomPage extends StatelessWidget {
   /// AppBar가 없을 때 true
   final bool safeTop;
 
+  /// false면 본문을 스크롤하지 않고 남은 높이를 채움
+  final bool bodyScrollable;
+
   @override
   Widget build(BuildContext context) {
     // 키보드로 viewport 가 줄어도 하단 바가 Column overflow 나지 않게 함
@@ -83,6 +88,13 @@ class FixedBottomPage extends StatelessWidget {
       builder: (context, constraints) {
         final bottomWidget = bottom;
         if (bottomWidget == null) {
+          if (!bodyScrollable) {
+            return SafeArea(
+              top: safeTop,
+              bottom: true,
+              child: Padding(padding: padding, child: body),
+            );
+          }
           return AppScrollView(
             top: safeTop,
             bottom: true,
@@ -101,12 +113,18 @@ class FixedBottomPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: AppScrollView(
-                top: safeTop,
-                bottom: false,
-                padding: padding,
-                child: body,
-              ),
+              child: bodyScrollable
+                  ? AppScrollView(
+                      top: safeTop,
+                      bottom: false,
+                      padding: padding,
+                      child: body,
+                    )
+                  : SafeArea(
+                      top: safeTop,
+                      bottom: false,
+                      child: Padding(padding: padding, child: body),
+                    ),
             ),
             ConstrainedBox(
               constraints: BoxConstraints(maxHeight: bottomMax),

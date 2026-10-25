@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_decorations.dart';
 
 /// 선택형 칩 — 테두리·회색 바탕 없이 순백 + 그림자로만 구분
 class AppSelectChip extends StatelessWidget {
@@ -32,17 +33,14 @@ class AppSelectChip extends StatelessWidget {
         padding: padding,
         alignment: expand ? Alignment.center : null,
         decoration: BoxDecoration(
-          // 순백만 — Material/회색 틴트·애니메이션 없음. 선택은 글자색·그림자로만 구분
+          // 순백만 — 선택은 글자색·은은한 그림자로만 구분. 비활성은 flat
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: selected ? 0.12 : 0.07),
-              blurRadius: selected ? 12 : 8,
-              spreadRadius: 0,
-              offset: Offset(0, selected ? 3 : 2),
-            ),
-          ],
+          boxShadow: !enabled
+              ? AppDecorations.noShadow
+              : selected
+                  ? AppDecorations.softShadowEmphasis
+                  : AppDecorations.softShadow,
         ),
         child: Text(
           label,

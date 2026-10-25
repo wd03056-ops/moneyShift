@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/time/kst_date_time.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/models.dart';
 import 'commute_correction_sheet.dart';
@@ -463,27 +464,20 @@ class _EmployeeCommuteCardState extends State<_EmployeeCommuteCard> {
           ],
           if (widget.onMarkAbsent != null) ...[
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton(
-                onPressed: _absentBusy
-                    ? null
-                    : () async {
-                        setState(() => _absentBusy = true);
-                        try {
-                          widget.onMarkAbsent!();
-                        } finally {
-                          if (mounted) setState(() => _absentBusy = false);
-                        }
-                      },
-                child: _absentBusy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('결근 처리'),
-              ),
+            StickyActionButton(
+              label: '결근 처리',
+              variant: StickyActionVariant.primary,
+              onPressed: _absentBusy
+                  ? null
+                  : () async {
+                      setState(() => _absentBusy = true);
+                      try {
+                        widget.onMarkAbsent!();
+                      } finally {
+                        if (mounted) setState(() => _absentBusy = false);
+                      }
+                    },
+              isLoading: _absentBusy,
             ),
           ],
         ],

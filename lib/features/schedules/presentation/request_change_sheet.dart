@@ -4,6 +4,9 @@ import 'package:intl/intl.dart';
 import '../../../core/calendar/snappy_calendar.dart';
 import '../../../core/time/kst_date_time.dart';
 import '../../../core/widgets/app_date_picker.dart';
+import '../../../core/widgets/app_snack_bar.dart';
+import '../../../core/widgets/app_text_input_defaults.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../models/models.dart';
 import '../../../services/schedule_repository.dart';
 
@@ -124,6 +127,7 @@ class _RequestChangeSheetState extends State<RequestChangeSheet> {
   }
 
   Future<void> _submit() async {
+    if (_submitting) return;
     setState(() => _submitting = true);
     try {
       final updated = await _repo.requestTimeChange(
@@ -133,14 +137,12 @@ class _RequestChangeSheetState extends State<RequestChangeSheet> {
         reason: _reasonController.text,
       );
       if (!mounted) return;
+      showAppSnackBar(context, message: '변경 요청을 보냈습니다.');
       Navigator.of(context).pop(updated);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('요청 실패: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _submitting = false);
+      showAppSnackBar(context, message: '요청 실패: $e');
+      setState(() => _submitting = false);
     }
   }
 
@@ -180,30 +182,28 @@ class _RequestChangeSheetState extends State<RequestChangeSheet> {
               trailing: const Icon(Icons.edit_calendar),
               onTap: _submitting ? null : _pickEnd,
             ),
-            TextField(
-              controller: _reasonController,
-              autocorrect: false,
-              enableSuggestions: false,
-              spellCheckConfiguration:
-                  const SpellCheckConfiguration.disabled(),
-              smartDashesType: SmartDashesType.disabled,
-              smartQuotesType: SmartQuotesType.disabled,
-              style: const TextStyle(decoration: TextDecoration.none),
-              decoration: const InputDecoration(
-                labelText: '수정 사유',
+            AppElevatedInputShell(
+              child: TextField(
+                controller: _reasonController,
+                autocorrect: false,
+                enableSuggestions: false,
+                spellCheckConfiguration:
+                    const SpellCheckConfiguration.disabled(),
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                style: const TextStyle(decoration: TextDecoration.none),
+                decoration: AppTextInputDefaults.decoration(
+                  labelText: '수정 사유',
+                ),
+                maxLines: 2,
               ),
-              maxLines: 2,
             ),
             const SizedBox(height: 16),
-            FilledButton(
+            StickyActionButton(
+              label: '확인 요청 보내기',
+              variant: StickyActionVariant.filled,
               onPressed: _submitting ? null : _submit,
-              child: _submitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('확인 요청 보내기'),
+              isLoading: _submitting,
             ),
           ],
         ),

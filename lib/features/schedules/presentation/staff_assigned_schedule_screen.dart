@@ -5,6 +5,7 @@ import '../../../core/navigation/app_navigation.dart';
 import '../../../core/navigation/app_route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/app_snack_bar.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../core/widgets/sticky_action_button.dart';
 import '../../../models/models.dart';
@@ -14,7 +15,7 @@ import '../widgets/pay_disclaimer_caption.dart';
 import 'staff_assigned_detail_screen.dart';
 
 /// 사장이 배정한 확인 대기 근무를 한눈에 모아 보는 화면
-class StaffAssignedScheduleScreen extends StatelessWidget {
+class StaffAssignedScheduleScreen extends StatefulWidget {
   const StaffAssignedScheduleScreen({
     super.key,
     required this.roomId,
@@ -24,45 +25,56 @@ class StaffAssignedScheduleScreen extends StatelessWidget {
   final String roomId;
   final String workerId;
 
-  Future<void> _confirmAll(BuildContext context) async {
+  @override
+  State<StaffAssignedScheduleScreen> createState() =>
+      _StaffAssignedScheduleScreenState();
+}
+
+class _StaffAssignedScheduleScreenState
+    extends State<StaffAssignedScheduleScreen> {
+  bool _busy = false;
+  bool _completed = false;
+
+  Future<void> _confirmAll() async {
+    if (_busy || _completed) return;
+    setState(() => _busy = true);
     final count = ScheduleStore.confirmAllPending(
-      roomId: roomId,
-      workerId: workerId,
+      roomId: widget.roomId,
+      workerId: widget.workerId,
     );
-    if (!context.mounted) return;
+    if (!mounted) return;
     if (count <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('확인할 근무가 없습니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '확인할 근무가 없습니다.',
+        aboveStickyActions: true,
       );
+      setState(() => _busy = false);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          count == 1
-              ? '근무표를 확인했습니다.'
-              : '근무표 $count건을 모두 확인했습니다.',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
+    showAppSnackBar(
+      context,
+      message: '완료되었습니다',
+      aboveStickyActions: true,
     );
-    Navigator.of(context).pop(true);
+    setState(() {
+      _busy = false;
+      _completed = true;
+    });
+    // 화면·스택 유지 — 목록은 ListenableBuilder로 갱신됨
   }
 
   @override
   Widget build(BuildContext context) {
-    final timeFmt = DateFormat('HH:mm');
-    final shortDayFmt = DateFormat('M/d');
     final currency = NumberFormat('#,###');
 
     return ListenableBuilder(
       listenable: ScheduleStore.listenable,
       builder: (context, _) {
-        final units = ScheduleStore.pendingUnits(roomId, workerId);
-        final pending = ScheduleStore.pendingForWorker(roomId, workerId);
+        final units =
+            ScheduleStore.pendingUnits(widget.roomId, widget.workerId);
+        final pending =
+            ScheduleStore.pendingForWorker(widget.roomId, widget.workerId);
 
         final totalPay = pending.fold<int>(
           0,
@@ -82,7 +94,7 @@ class StaffAssignedScheduleScreen extends StatelessWidget {
           ),
           body: FixedBottomPage(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-            bottom: hasPending
+            bottom: (hasPending || _completed)
                 ? StickyActionBar(
                     safeAreaBottom: true,
                     elevated: true,
@@ -90,7 +102,13 @@ class StaffAssignedScheduleScreen extends StatelessWidget {
                       StickyActionButton(
                         label: '전체 확인',
                         variant: StickyActionVariant.filled,
-                        onPressed: () => _confirmAll(context),
+                        enabled: !_busy && !_completed && hasPending,
+                        isLoading: _busy,
+                        isCompleted: _completed || !hasPending,
+                        completedLabel: '처리 완료',
+                        onPressed: (_busy || _completed || !hasPending)
+                            ? null
+                            : _confirmAll,
                       ),
                     ],
                   )
@@ -140,8 +158,6 @@ class StaffAssignedScheduleScreen extends StatelessWidget {
                         if (i > 0) const SizedBox(height: 10),
                         _PendingUnitCard(
                           schedules: units[i],
-                          shortDayFmt: shortDayFmt,
-                          timeFmt: timeFmt,
                           currency: currency,
                           onOpenCalendar: () {
                             final unit = units[i];
@@ -150,7 +166,7 @@ class StaffAssignedScheduleScreen extends StatelessWidget {
                             AppNavigation.pushSingleTop(
                               name: AppRouteNames.assignedDetail(key),
                               stopAtNames: [
-                                AppRouteNames.assignedSchedule(roomId),
+                                AppRouteNames.assignedSchedule(widget.roomId),
                               ],
                               builder: (_) => StaffAssignedDetailScreen(
                                 schedules: unit,
@@ -208,15 +224,11 @@ class StaffAssignedScheduleScreen extends StatelessWidget {
 class _PendingUnitCard extends StatelessWidget {
   const _PendingUnitCard({
     required this.schedules,
-    required this.shortDayFmt,
-    required this.timeFmt,
     required this.currency,
     required this.onOpenCalendar,
   });
 
   final List<ScheduleModel> schedules;
-  final DateFormat shortDayFmt;
-  final DateFormat timeFmt;
   final NumberFormat currency;
   final VoidCallback onOpenCalendar;
 
@@ -228,18 +240,7 @@ class _PendingUnitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final blocks = formatScheduleSummary(
-      schedules,
-      dayFmt: shortDayFmt,
-      rangeFmt: timeFmt,
-    );
-    final summaryLines = <String>[];
-    for (final block in blocks) {
-      summaryLines.addAll(block.visibleLines(expanded: false));
-      if (block.isExpandable) {
-        summaryLines.add('+${block.hiddenCount}개 일정 더보기');
-      }
-    }
+    final datesLine = formatScheduleDatesOnly(schedules);
 
     return AppCard(
       onTap: onOpenCalendar,
@@ -251,26 +252,14 @@ class _PendingUnitCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < summaryLines.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 4),
-                  Text(
-                    summaryLines[i],
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: i == 0
-                        ? textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          )
-                        : textTheme.bodyMedium?.copyWith(
-                            color: summaryLines[i].startsWith('+')
-                                ? AppColors.primary
-                                : AppColors.textCaption,
-                            fontWeight: summaryLines[i].startsWith('+')
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                          ),
+                Text(
+                  datesLine,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                ],
+                ),
                 if (_totalPay > 0) ...[
                   const SizedBox(height: 8),
                   Text(

@@ -62,13 +62,15 @@ class StaffMonthPaySummaryCard extends StatelessWidget {
     );
   }
 
-  /// 예: `10.1 ~ 오늘` (해당 월 1일 ~ 오늘까지 확정분)
+  /// 예: `10.1 ~ 오늘 (10.26)` (해당 월 1일 ~ 오늘까지 확정분)
   String get _periodLabel {
     final start = '${summary.month}.1';
     final now = KstDateTime.now();
     final isCurrentMonth =
         summary.year == now.year && summary.month == now.month;
-    if (isCurrentMonth) return '$start ~ 오늘';
+    if (isCurrentMonth) {
+      return '$start ~ 오늘 (${now.month}.${now.day})';
+    }
     final lastDay = DateTime(summary.year, summary.month + 1, 0).day;
     return '$start ~ ${summary.month}.$lastDay';
   }

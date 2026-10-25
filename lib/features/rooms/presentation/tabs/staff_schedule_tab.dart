@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
@@ -12,11 +12,10 @@ import '../../../../mock/app_listenables.dart';
 import '../../../../mock/mock_session.dart';
 import '../../../../mock/mock_store.dart';
 import '../../../../models/models.dart';
-import '../../../schedules/presentation/shift_swap_request_sheet.dart';
 import '../../../schedules/schedule_store.dart';
-import '../../../schedules/widgets/pay_breakdown_view.dart';
-import '../../../schedules/widgets/pay_disclaimer_caption.dart';
 import '../../../schedules/widgets/pending_change_card.dart';
+import '../../../schedules/widgets/schedule_assigned_day_nav.dart';
+import '../../../schedules/widgets/schedule_day_detail_card.dart';
 
 /// 알바 2탭 — 달력 기반 내 근무표
 ///
@@ -97,7 +96,6 @@ class _StaffScheduleTabState extends State<StaffScheduleTab> {
   @override
   Widget build(BuildContext context) {
     final uid = MockSession.instance.requireUid;
-    final timeFmt = DateFormat('HH:mm');
 
     return ListenableBuilder(
       listenable: AppListenables.sessionAndStore,
@@ -349,28 +347,44 @@ class _StaffScheduleTabState extends State<StaffScheduleTab> {
               ValueListenableBuilder<DateTime>(
                 valueListenable: _selectedDay,
                 builder: (context, selectedDay, _) {
-                  final selected = _eventsForDay(mine, selectedDay);
-                  if (selected.isEmpty) {
-                    return AppCard(
-                      child: Text(
-                        '이 날짜에 확인된 근무가 없습니다.',
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    );
+                  void goTo(DateTime day) {
+                    final next = _dateOnly(day);
+                    _selectedDay.value = next;
+                    if (_focusedDay.year != next.year ||
+                        _focusedDay.month != next.month) {
+                      setState(() => _focusedDay = next);
+                    }
                   }
-                  return Column(
-                    children: [
-                      for (final s in selected)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _ScheduleDetailCard(
-                            schedule: s,
-                            timeFmt: timeFmt,
+
+                  final selected = _eventsForDay(mine, selectedDay);
+                  final detail = selected.isEmpty
+                      ? AppCard(
+                          child: Text(
+                            '이 날짜에 확인된 근무가 없습니다.',
+                            style: textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
                           ),
-                        ),
-                    ],
+                        )
+                      : Column(
+                          children: [
+                            for (final s in selected)
+                              Padding(
+                                key: ValueKey('day-card-${s.id}'),
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: ScheduleDayDetailCard(
+                                  key: ValueKey(s.id),
+                                  schedule: s,
+                                ),
+                              ),
+                          ],
+                        );
+
+                  return ScheduleAssignedDayNav(
+                    selectedDay: selectedDay,
+                    assignedDays: byDate.keys.toList(),
+                    onGoTo: goTo,
+                    child: detail,
                   );
                 },
               ),
@@ -450,267 +464,6 @@ class _DayCell extends StatelessWidget {
               : null,
         ),
       ],
-    );
-  }
-}
-
-class _ScheduleDetailCard extends StatelessWidget {
-  const _ScheduleDetailCard({
-    required this.schedule,
-    required this.timeFmt,
-  });
-
-  final ScheduleModel schedule;
-  final DateFormat timeFmt;
-
-  /// 대타 승인 note에 요청자 이름이 없으면 승인된 swap에서 보강
-  String _swapNoteLabel(ScheduleModel s) {
-    final note = s.note ?? '';
-    if (!note.startsWith('대타 승인')) return note;
-    if (note.contains('요청자')) return note;
-
-    final store = MockStore.instance;
-    ShiftSwapRequest? approved;
-    for (final swap in store.shiftSwaps.values) {
-      if (swap.scheduleId == s.id &&
-          swap.status == ShiftSwapStatus.approved) {
-        approved = swap;
-        break;
-      }
-    }
-    if (approved == null) return note;
-    final fromName =
-        store.memberDisplayName(s.roomId, approved.fromWorkerId);
-    final reason = approved.reason.trim().isEmpty
-        ? null
-        : approved.reason.trim();
-    if (reason != null) {
-      return '대타 승인 · 요청자 $fromName · 사유: $reason';
-    }
-    return '대타 승인 · 요청자 $fromName';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = schedule;
-    final store = MockStore.instance;
-    final uid = MockSession.instance.currentUser?.uid;
-    final swap = store.openSwapForSchedule(s.id);
-    final isMine = uid != null && s.workerId == uid;
-    final today = DateTime(
-      KstDateTime.now().year,
-      KstDateTime.now().month,
-      KstDateTime.now().day,
-    );
-    final scheduleDay = DateTime(
-      s.startTime.year,
-      s.startTime.month,
-      s.startTime.day,
-    );
-    final clockOut = store.clockOutOnDate(
-      s.roomId,
-      s.workerId,
-      s.startTime,
-      scheduleId: s.id,
-    );
-    final clockedOut = clockOut != null;
-    // 출근 전·근무 중만 대타 가능. 퇴근 완료·과거·결근·진행 중 요청은 불가.
-    final canRequest = isMine &&
-        swap == null &&
-        !s.isAbsent &&
-        !clockedOut &&
-        !scheduleDay.isBefore(today);
-
-    final textTheme = Theme.of(context).textTheme;
-    final muted = swap != null || s.isAbsent || clockedOut;
-
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${timeFmt.format(s.startTime)} ~ ${timeFmt.format(s.endTime)}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: muted ? AppColors.textCaption : AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              if (s.isChangeRequested)
-                const ChangeRequestedBadge()
-              else if (!clockedOut)
-                _StatusBadge(
-                  label: s.attendanceStatusLabel,
-                  color: s.isAbsent
-                      ? AppColors.holiday
-                      : s.isConfirmed
-                          ? AppColors.success
-                          : AppColors.warning,
-                ),
-              if (clockedOut)
-                _StatusBadge(
-                  label: '${timeFmt.format(clockOut.timestamp)} 퇴근 완료',
-                  color: AppColors.success,
-                ),
-              if (s.status != ScheduleStatus.normal && !s.isChangeRequested)
-                _StatusBadge(
-                  label: s.status.labelKo,
-                  color: AppColors.secondary,
-                ),
-              if (swap != null)
-                _StatusBadge(
-                  label: '대타 요청 중',
-                  color: AppColors.warning,
-                ),
-            ],
-          ),
-          if (s.isChangeRequested && s.pendingChange != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              '${timeFmt.format(s.startTime)} ➔ '
-              '${timeFmt.format(s.pendingChange!.startTime)}'
-              '  ·  '
-              '${timeFmt.format(s.endTime)} ➔ '
-              '${timeFmt.format(s.pendingChange!.endTime)}',
-              style: textTheme.bodySmall?.copyWith(
-                color: AppColors.warning,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          if (s.isAbsent) ...[
-            const SizedBox(height: 10),
-            Text(
-              '사장님이 결근 처리한 근무입니다.',
-              style: textTheme.bodySmall?.copyWith(
-                color: AppColors.holiday,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-          if (clockedOut) ...[
-            const SizedBox(height: 10),
-            Text(
-              '${timeFmt.format(clockOut.timestamp)}에 퇴근이 완료된 근무입니다.',
-              style: textTheme.bodySmall?.copyWith(
-                color: AppColors.success,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          if (swap != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              '${swap.status.labelKo} · '
-              '${store.memberDisplayName(s.roomId, swap.toWorkerId)}에게 요청',
-              style: textTheme.bodySmall?.copyWith(
-                color: AppColors.warning,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-          if (s.note != null &&
-              s.note!.isNotEmpty &&
-              s.note != '근무 배정') ...[
-            const SizedBox(height: 10),
-            Text(
-              _swapNoteLabel(s),
-              style: textTheme.bodyMedium?.copyWith(
-                color: AppColors.textCaption,
-              ),
-            ),
-          ],
-          if (!s.isAbsent) ...[
-            Builder(
-              builder: (context) {
-                final actual = store.actualPayEstimateOnDate(
-                  s.roomId,
-                  s.workerId,
-                  s.startTime,
-                );
-                if (actual != null) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 14),
-                      PayBreakdownView(
-                        schedule: s,
-                        estimateOverride: actual,
-                        titlePrefix: '실근무 급여',
-                      ),
-                      const PayDisclaimerCaption(),
-                    ],
-                  );
-                }
-                if (s.estimatedPay != null) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 14),
-                      PayBreakdownView(schedule: s),
-                      const PayDisclaimerCaption(),
-                    ],
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-          ],
-          if (canRequest) ...[
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: OutlinedButton(
-                onPressed: () async {
-                  final ok = await showShiftSwapRequestSheet(
-                    context: context,
-                    schedule: s,
-                  );
-                  if (ok && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('대타 요청을 보냈습니다.'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }
-                },
-                child: const Text('대타 요청하기'),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color),
-      ),
     );
   }
 }

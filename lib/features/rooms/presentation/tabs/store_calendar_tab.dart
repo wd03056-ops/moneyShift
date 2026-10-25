@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
@@ -8,10 +8,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/time/kst_date_time.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/scrollable_page_body.dart';
-import '../../../../mock/mock_session.dart';
 import '../../../../mock/mock_store.dart';
 import '../../../../models/models.dart';
 import '../../../schedules/schedule_store.dart';
+import '../../../schedules/widgets/schedule_assigned_day_nav.dart';
+import '../../../schedules/widgets/schedule_day_detail_card.dart';
 
 /// 매장 전체 근무 일정 달력 뷰
 ///
@@ -45,8 +46,12 @@ class _StoreCalendarTabState extends State<StoreCalendarTab> {
   late DateTime _focusedDay;
   late final ValueNotifier<DateTime> _selectedDay;
 
+  /// false = 주간(1줄), true = 월간
+  bool _monthExpanded = false;
+
   static const double _headerH = 44;
   static const double _dowH = 20;
+  static const double _toggleH = 28;
 
   static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -87,12 +92,22 @@ class _StoreCalendarTabState extends State<StoreCalendarTab> {
     return ((startOffset + last.day + 6) ~/ 7).clamp(4, 6);
   }
 
-  double _calendarHeight(double rowHeight, DateTime focused) =>
-      _headerH + _dowH + (rowHeight * _weeksInMonth(focused)) + 8;
+  double _calendarHeight(double rowHeight, DateTime focused) {
+    final weeks = _monthExpanded ? _weeksInMonth(focused) : 1;
+    return _headerH + _dowH + (rowHeight * weeks) + 8;
+  }
+
+  void _setMonthExpanded(bool expanded) {
+    if (_monthExpanded == expanded) return;
+    setState(() {
+      _monthExpanded = expanded;
+      // 주간으로 접을 때 선택일이 속한 주가 보이도록 focused 유지/보정
+      _focusedDay = _dateOnly(_selectedDay.value);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final timeFmt = DateFormat('HH:mm');
     final dayTitleFmt = DateFormat('M월 d일 (E)', 'ko_KR');
 
     return ListenableBuilder(
@@ -103,12 +118,6 @@ class _StoreCalendarTabState extends State<StoreCalendarTab> {
         final all = store.schedulesForRoom(widget.room.id)
           ..sort((a, b) => a.startTime.compareTo(b.startTime));
         final byDate = _groupByDate(all);
-        final uid = MockSession.instance.currentUser?.uid;
-        final membership = uid == null
-            ? null
-            : store.getMembership(widget.room.id, uid);
-        final canSeeAllSwaps =
-            membership?.role.canManageSchedules ?? false;
         final content = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -136,23 +145,29 @@ class _StoreCalendarTabState extends State<StoreCalendarTab> {
                     final calH = _calendarHeight(rowHeight, _focusedDay);
 
                     return AppCard(
-                      padding: const EdgeInsets.fromLTRB(10, 10, 10, 18),
-                      child: SizedBox(
-                        height: calH,
-                        width: constraints.maxWidth,
-                        child: ClipRect(
-                          child: ValueListenableBuilder<DateTime>(
-                            valueListenable: _selectedDay,
-                            builder: (context, selectedDay, _) {
-                              return TableCalendar<ScheduleModel>(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            height: calH,
+                            width: constraints.maxWidth,
+                            child: ClipRect(
+                              child: ValueListenableBuilder<DateTime>(
+                                valueListenable: _selectedDay,
+                                builder: (context, selectedDay, _) {
+                                  return TableCalendar<ScheduleModel>(
                                 firstDay: DateTime.utc(2024, 1, 1),
                                 lastDay: DateTime.utc(2030, 12, 31),
                                 focusedDay: _focusedDay,
                                 selectedDayPredicate: (day) =>
                                     isSameDay(selectedDay, day),
-                                calendarFormat: CalendarFormat.month,
+                                calendarFormat: _monthExpanded
+                                    ? CalendarFormat.month
+                                    : CalendarFormat.week,
                                 availableCalendarFormats: const {
                                   CalendarFormat.month: 'Month',
+                                  CalendarFormat.week: 'Week',
                                 },
                                 startingDayOfWeek: StartingDayOfWeek.sunday,
                                 locale: 'ko_KR',
@@ -287,100 +302,48 @@ class _StoreCalendarTabState extends State<StoreCalendarTab> {
                                 ),
                                 onDaySelected: (day, focusedDay) {
                                   final next = _dateOnly(day);
-                                  // 선택 하이라이트만 즉시 갱신 (전체 탭 setState 회피)
                                   if (!isSameDay(_selectedDay.value, next)) {
                                     _selectedDay.value = next;
                                     widget.onSelectedDayChanged?.call(next);
                                   }
-                                  if (_focusedDay.year != focusedDay.year ||
-                                      _focusedDay.month != focusedDay.month) {
+                                  // 주간/월간 모두 focused를 선택일에 맞춤
+                                  if (!isSameDay(_focusedDay, focusedDay)) {
                                     setState(() => _focusedDay = focusedDay);
                                   }
                                 },
                                 onPageChanged: (focusedDay) {
                                   setState(() => _focusedDay = focusedDay);
                                 },
-                              );
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          _CalendarExpandToggle(
+                            expanded: _monthExpanded,
+                            onToggle: () =>
+                                _setMonthExpanded(!_monthExpanded),
+                            onVerticalDrag: (delta) {
+                              if (delta > 8) {
+                                _setMonthExpanded(true);
+                              } else if (delta < -8) {
+                                _setMonthExpanded(false);
+                              }
                             },
                           ),
-                        ),
+                        ],
                       ),
                     );
                   },
                 ),
-                const SizedBox(height: 28),
-                ValueListenableBuilder<DateTime>(
-                  valueListenable: _selectedDay,
-                  builder: (context, selectedDay, _) {
-                    final selected = byDate[_dateOnly(selectedDay)] ??
-                        const <ScheduleModel>[];
-                    final workerCount =
-                        selected.map((s) => s.workerId).toSet().length;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                dayTitleFmt.format(selectedDay),
-                                style: textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: KoreanHolidays.isRedDay(selectedDay)
-                                      ? AppColors.holiday
-                                      : AppColors.textPrimary,
-                                ),
-                              ),
-                            ),
-                            if (selected.isNotEmpty)
-                              Text(
-                                '근무 $workerCount명',
-                                style: textTheme.bodySmall?.copyWith(
-                                  color: AppColors.textCaption,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                          ],
-                        ),
-                        if (KoreanHolidays.nameOf(selectedDay)
-                            case final holidayName?)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              holidayName,
-                              style: textTheme.bodySmall?.copyWith(
-                                color: AppColors.holiday,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 16),
-                        if (selected.isEmpty)
-                          AppCard(
-                            child: Text(
-                              '이 날짜에 배정된 근무가 없습니다.',
-                              style: textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          )
-                        else
-                          for (final group in _groupByShiftTime(selected))
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _ShiftGroupCard(
-                                schedules: group,
-                                roomId: widget.room.id,
-                                store: store,
-                                timeFmt: timeFmt,
-                                currentUserId: uid,
-                                canSeeAllSwaps: canSeeAllSwaps,
-                              ),
-                            ),
-                      ],
-                    );
-                  },
-                ),
+                if (widget.embedded)
+                  const SizedBox(height: 12)
+                else
+                  const SizedBox(height: 28),
+                if (widget.embedded)
+                  Expanded(child: _buildDayList(context, byDate, store, dayTitleFmt, textTheme))
+                else
+                  _buildDayList(context, byDate, store, dayTitleFmt, textTheme),
               ],
         );
 
@@ -398,32 +361,197 @@ class _StoreCalendarTabState extends State<StoreCalendarTab> {
     );
   }
 
-  /// 같은 출퇴근 시각 + 같은 확인/결근 상태끼리만 묶음
-  static List<List<ScheduleModel>> _groupByShiftTime(
-    List<ScheduleModel> schedules,
+  Widget _buildDayList(
+    BuildContext context,
+    Map<DateTime, List<ScheduleModel>> byDate,
+    MockStore store,
+    DateFormat dayTitleFmt,
+    TextTheme textTheme,
   ) {
-    final map = <String, List<ScheduleModel>>{};
-    for (final s in schedules) {
-      final statusKey = s.isAbsent
-          ? 'absent'
-          : (s.isConfirmed ? 'confirmed' : 'pending');
-      final key =
-          '${s.startTime.hour}:${s.startTime.minute}-'
-          '${s.endTime.hour}:${s.endTime.minute}|$statusKey';
-      map.putIfAbsent(key, () => []).add(s);
-    }
-    final groups = map.values.toList();
-    groups.sort((a, b) {
-      final byTime = a.first.startTime.compareTo(b.first.startTime);
+    return ValueListenableBuilder<DateTime>(
+      valueListenable: _selectedDay,
+      builder: (context, selectedDay, _) {
+        final selected =
+            byDate[_dateOnly(selectedDay)] ?? const <ScheduleModel>[];
+        final workerCount = selected.map((s) => s.workerId).toSet().length;
+        final assignedDays = byDate.keys.toList();
+
+        void goTo(DateTime day) {
+          final next = _dateOnly(day);
+          _selectedDay.value = next;
+          widget.onSelectedDayChanged?.call(next);
+          setState(() => _focusedDay = next);
+        }
+
+        final header = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    dayTitleFmt.format(selectedDay),
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: KoreanHolidays.isRedDay(selectedDay)
+                          ? AppColors.holiday
+                          : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                if (selected.isNotEmpty)
+                  Text(
+                    '근무 $workerCount명',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: AppColors.textCaption,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+              ],
+            ),
+            if (KoreanHolidays.nameOf(selectedDay) case final holidayName?)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  holidayName,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: AppColors.holiday,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+          ],
+        );
+
+        final cards = selected.isEmpty
+            ? [
+                AppCard(
+                  child: Text(
+                    '이 날짜에 배정된 근무가 없습니다.',
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ]
+            : [
+                for (final s in _sortedDaySchedules(
+                  selected,
+                  store,
+                  widget.room.id,
+                ))
+                  Padding(
+                    key: ValueKey('day-card-${s.id}'),
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: ScheduleDayDetailCard(
+                      key: ValueKey(s.id),
+                      schedule: s,
+                      enableSwapRequest: false,
+                      headline: store.memberDisplayName(
+                        widget.room.id,
+                        s.workerId,
+                      ),
+                    ),
+                  ),
+              ];
+
+        final body = widget.embedded
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: ClampingScrollPhysics(),
+                      ),
+                      children: cards,
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  ...cards,
+                ],
+              );
+
+        return ScheduleAssignedDayNav(
+          selectedDay: selectedDay,
+          assignedDays: assignedDays,
+          onGoTo: goTo,
+          child: body,
+        );
+      },
+    );
+  }
+
+  static List<ScheduleModel> _sortedDaySchedules(
+    List<ScheduleModel> schedules,
+    MockStore store,
+    String roomId,
+  ) {
+    final list = [...schedules];
+    list.sort((a, b) {
+      final byTime = a.startTime.compareTo(b.startTime);
       if (byTime != 0) return byTime;
-      int rank(ScheduleModel s) {
-        if (s.isAbsent) return 2;
-        if (s.isConfirmed) return 1;
-        return 0;
-      }
-      return rank(a.first).compareTo(rank(b.first));
+      return store
+          .memberDisplayName(roomId, a.workerId)
+          .compareTo(store.memberDisplayName(roomId, b.workerId));
     });
-    return groups;
+    return list;
+  }
+}
+
+/// 주간 ↔ 월간 펼침 토글 (탭 · 세로 드래그)
+class _CalendarExpandToggle extends StatelessWidget {
+  const _CalendarExpandToggle({
+    required this.expanded,
+    required this.onToggle,
+    required this.onVerticalDrag,
+  });
+
+  final bool expanded;
+  final VoidCallback onToggle;
+  final ValueChanged<double> onVerticalDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onToggle,
+      onVerticalDragUpdate: (details) {
+        onVerticalDrag(details.delta.dy);
+      },
+      child: SizedBox(
+        height: _StoreCalendarTabState._toggleH,
+        width: double.infinity,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Icon(
+              expanded
+                  ? Icons.expand_less_rounded
+                  : Icons.expand_more_rounded,
+              size: 18,
+              color: AppColors.textSecondary.withValues(alpha: 0.8),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -495,137 +623,6 @@ class _DayCell extends StatelessWidget {
               : null,
         ),
       ],
-    );
-  }
-}
-
-class _ShiftGroupCard extends StatelessWidget {
-  const _ShiftGroupCard({
-    required this.schedules,
-    required this.roomId,
-    required this.store,
-    required this.timeFmt,
-    this.currentUserId,
-    this.canSeeAllSwaps = false,
-  });
-
-  final List<ScheduleModel> schedules;
-  final String roomId;
-  final MockStore store;
-  final DateFormat timeFmt;
-  final String? currentUserId;
-  final bool canSeeAllSwaps;
-
-  @override
-  Widget build(BuildContext context) {
-    final first = schedules.first;
-    final names = schedules
-        .map((s) => store.memberDisplayName(roomId, s.workerId))
-        .toList()
-      ..sort();
-    final allAbsent = schedules.every((s) => s.isAbsent);
-    final allConfirmed =
-        !allAbsent && schedules.every((s) => s.isConfirmed);
-    final badgeColor = allAbsent
-        ? AppColors.holiday
-        : allConfirmed
-            ? AppColors.success
-            : AppColors.warning;
-    final badgeLabel = allAbsent
-        ? '결근'
-        : allConfirmed
-            ? '확인 완료'
-            : '확인 대기';
-
-    ShiftSwapRequest? visibleSwap;
-    for (final s in schedules) {
-      final swap = store.openSwapForSchedule(s.id);
-      if (swap == null) continue;
-      final canSee = canSeeAllSwaps ||
-          (currentUserId != null &&
-              (swap.fromWorkerId == currentUserId ||
-                  swap.toWorkerId == currentUserId));
-      if (canSee) {
-        visibleSwap = swap;
-        break;
-      }
-    }
-
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  names.join(' · '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                ),
-              ),
-              if (visibleSwap != null) ...[
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    '대타 요청 중',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppColors.warning,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-              ],
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: badgeColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  badgeLabel,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: badgeColor,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${timeFmt.format(first.startTime)} ~ '
-            '${timeFmt.format(first.endTime)}'
-            '${schedules.length > 1 ? ' · ${schedules.length}명' : ''}',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.textCaption,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          if (visibleSwap != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              '${visibleSwap.status.labelKo} · '
-              '${store.memberDisplayName(roomId, visibleSwap.fromWorkerId)}'
-              ' → ${store.memberDisplayName(roomId, visibleSwap.toWorkerId)}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.warning,
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

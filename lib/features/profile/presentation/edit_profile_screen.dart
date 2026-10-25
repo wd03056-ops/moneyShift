@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_snack_bar.dart';
 import '../../../core/widgets/app_text_input_defaults.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
 import '../../../core/widgets/sticky_action_button.dart';
@@ -20,6 +21,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _emailController;
   bool _saving = false;
+  bool _saved = false;
 
   MockUser get _user => MockSession.instance.currentUser!;
 
@@ -42,6 +44,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (MockSession.instance.currentUser == null) return;
 
+    if (_saving || _saved) return;
     setState(() => _saving = true);
     try {
       MockSession.instance.updateProfile(
@@ -49,17 +52,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         email: _emailController.text,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('프로필을 저장했습니다.')),
+      showAppSnackBar(
+        context,
+        message: '완료되었습니다',
+        aboveStickyActions: true,
       );
-      Navigator.of(context).pop(true);
+      setState(() {
+        _saving = false;
+        _saved = true;
+      });
+      // 저장 후에도 수정 화면 유지
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('저장 실패: $e')),
+      showAppSnackBar(
+        context,
+        message: '저장 실패: $e',
+        aboveStickyActions: true,
       );
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      setState(() => _saving = false);
     }
   }
 
@@ -83,68 +93,78 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             children: [
               StickyActionButton(
                 label: '저장',
-                variant: StickyActionVariant.primary,
+                variant: StickyActionVariant.filled,
                 isLoading: _saving,
-                onPressed: _saving ? null : _save,
+                isCompleted: _saved,
+                completedLabel: '완료됨',
+                onPressed: (_saving || _saved) ? null : _save,
               ),
             ],
           ),
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextFormField(
-                controller: _nameController,
-                textInputAction: TextInputAction.next,
-                keyboardType: TextInputType.text,
-                textCapitalization: TextCapitalization.none,
-                autocorrect: AppTextInputDefaults.autocorrect,
-                enableSuggestions: AppTextInputDefaults.enableSuggestions,
-                spellCheckConfiguration:
-                    AppTextInputDefaults.spellCheckConfiguration,
-                smartDashesType: AppTextInputDefaults.smartDashesType,
-                smartQuotesType: AppTextInputDefaults.smartQuotesType,
-                style: const TextStyle(decoration: TextDecoration.none),
-                decoration: const InputDecoration(
-                  labelText: '이름',
-                  hintText: '표시할 이름을 입력하세요',
+              AppElevatedInputShell(
+                enabled: !_saving && !_saved,
+                child: TextFormField(
+                  controller: _nameController,
+                  enabled: !_saving && !_saved,
+                  textInputAction: TextInputAction.next,
+                  keyboardType: TextInputType.text,
+                  textCapitalization: TextCapitalization.none,
+                  autocorrect: AppTextInputDefaults.autocorrect,
+                  enableSuggestions: AppTextInputDefaults.enableSuggestions,
+                  spellCheckConfiguration:
+                      AppTextInputDefaults.spellCheckConfiguration,
+                  smartDashesType: AppTextInputDefaults.smartDashesType,
+                  smartQuotesType: AppTextInputDefaults.smartQuotesType,
+                  style: const TextStyle(decoration: TextDecoration.none),
+                  decoration: AppTextInputDefaults.decoration(
+                    labelText: '이름',
+                    hintText: '표시할 이름을 입력하세요',
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return '이름을 입력해주세요.';
+                    }
+                    if (v.trim().length < 2) {
+                      return '이름은 2자 이상이어야 합니다.';
+                    }
+                    return null;
+                  },
                 ),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return '이름을 입력해주세요.';
-                  }
-                  if (v.trim().length < 2) {
-                    return '이름은 2자 이상이어야 합니다.';
-                  }
-                  return null;
-                },
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                textInputAction: TextInputAction.done,
-                autocorrect: false,
-                enableSuggestions: false,
-                spellCheckConfiguration:
-                    const SpellCheckConfiguration.disabled(),
-                smartDashesType: SmartDashesType.disabled,
-                smartQuotesType: SmartQuotesType.disabled,
-                style: const TextStyle(decoration: TextDecoration.none),
-                decoration: const InputDecoration(
-                  labelText: '이메일',
-                  hintText: 'example@email.com',
+              const SizedBox(height: 20),
+              AppElevatedInputShell(
+                enabled: !_saving && !_saved,
+                child: TextFormField(
+                  controller: _emailController,
+                  enabled: !_saving && !_saved,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.done,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  spellCheckConfiguration:
+                      const SpellCheckConfiguration.disabled(),
+                  smartDashesType: SmartDashesType.disabled,
+                  smartQuotesType: SmartQuotesType.disabled,
+                  style: const TextStyle(decoration: TextDecoration.none),
+                  decoration: AppTextInputDefaults.decoration(
+                    labelText: '이메일',
+                    hintText: 'example@email.com',
+                  ),
+                  onFieldSubmitted: (_) => _save(),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return '이메일을 입력해주세요.';
+                    }
+                    final email = v.trim();
+                    if (!email.contains('@') || !email.contains('.')) {
+                      return '올바른 이메일 형식이 아닙니다.';
+                    }
+                    return null;
+                  },
                 ),
-                onFieldSubmitted: (_) => _save(),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return '이메일을 입력해주세요.';
-                  }
-                  final email = v.trim();
-                  if (!email.contains('@') || !email.contains('.')) {
-                    return '올바른 이메일 형식이 아닙니다.';
-                  }
-                  return null;
-                },
               ),
               const SizedBox(height: 12),
               Text(

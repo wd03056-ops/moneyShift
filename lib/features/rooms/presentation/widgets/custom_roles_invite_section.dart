@@ -7,6 +7,7 @@ import '../../../../core/utils/async_action_guard.dart';
 import '../../../../core/utils/clipboard_share.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_select_chip.dart';
+import '../../../../core/widgets/sticky_action_button.dart';
 import '../../../../mock/app_listenables.dart';
 import '../../../../models/models.dart';
 import '../../../../services/room_invite_service.dart';
@@ -296,18 +297,11 @@ class _CustomRolesInviteSectionState extends State<CustomRolesInviteSection> {
           ],
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 48,
-          child: FilledButton(
-            onPressed: _creating ? null : _create,
-            child: _creating
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
-                  )
-                : const Text('직책 생성 · 코드 발급'),
-          ),
+        StickyActionButton(
+          label: '직책 생성 · 코드 발급',
+          variant: StickyActionVariant.filled,
+          onPressed: _creating ? null : _create,
+          isLoading: _creating,
         ),
         if (_loading) ...[
           const SizedBox(height: 16),

@@ -7,8 +7,11 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_option_picker.dart';
 import '../../../core/widgets/app_select_chip.dart';
+import '../../../core/widgets/app_snack_bar.dart';
+import '../../../core/widgets/app_text_input_defaults.dart';
 import '../../../core/widgets/outlined_toggle.dart';
 import '../../../core/widgets/scrollable_page_body.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/models.dart';
 import '../../../services/payroll_calculator.dart';
@@ -38,6 +41,7 @@ class _EmployeeDetailSettingScreenState
   late bool _nightPay;
   late bool _overtimePay;
   bool _saving = false;
+  bool _saved = false;
 
   static const _fixedBreakOptions = [0, 30, 45, 60, 90];
 
@@ -74,7 +78,7 @@ class _EmployeeDetailSettingScreenState
   }
 
   Future<void> _save() async {
-    if (_saving) return;
+    if (_saving || _saved) return;
     setState(() => _saving = true);
     try {
       MockStore.instance.updateEmployeeContract(
@@ -90,23 +94,24 @@ class _EmployeeDetailSettingScreenState
         ),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('직원 기본 설정을 저장했습니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '완료되었습니다',
+        aboveStickyActions: true,
       );
-      Navigator.pop(context, true);
+      setState(() {
+        _saving = false;
+        _saved = true;
+      });
+      // 저장 후에도 현재 설정 화면 유지
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$e'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppSnackBar(
+        context,
+        message: '$e',
+        aboveStickyActions: true,
       );
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      setState(() => _saving = false);
     }
   }
 
@@ -136,32 +141,34 @@ class _EmployeeDetailSettingScreenState
             const SizedBox(height: 20),
             Text('기본 시급', style: textTheme.titleSmall),
             const SizedBox(height: 8),
-            TextField(
-              controller: _wageCtrl,
-              enabled: !_saving,
-              keyboardType: TextInputType.number,
-              autocorrect: false,
-              enableSuggestions: false,
-              spellCheckConfiguration:
-                  const SpellCheckConfiguration.disabled(),
-              smartDashesType: SmartDashesType.disabled,
-              smartQuotesType: SmartQuotesType.disabled,
-              style: const TextStyle(decoration: TextDecoration.none),
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                _ThousandsSeparatorFormatter(),
-              ],
-              decoration: InputDecoration(
-                suffixText: '원',
-                border: const OutlineInputBorder(),
-                hintText: '${AppConstants.minimumHourlyWage}',
+            AppElevatedInputShell(
+              enabled: !_saving && !_saved,
+              child: TextField(
+                controller: _wageCtrl,
+                enabled: !_saving && !_saved,
+                keyboardType: TextInputType.number,
+                autocorrect: false,
+                enableSuggestions: false,
+                spellCheckConfiguration:
+                    const SpellCheckConfiguration.disabled(),
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                style: const TextStyle(decoration: TextDecoration.none),
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  _ThousandsSeparatorFormatter(),
+                ],
+                decoration: AppTextInputDefaults.decoration(
+                  suffixText: '원',
+                  hintText: '${AppConstants.minimumHourlyWage}',
+                ),
               ),
             ),
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
-                onPressed: _saving ? null : _applyMinimumWage,
+                onPressed: (_saving || _saved) ? null : _applyMinimumWage,
                 icon: const Icon(Icons.savings_outlined, size: 18),
                 label: Text(
                   '최저시급 적용 (${AppConstants.minimumWageYear}년 '
@@ -187,7 +194,7 @@ class _EmployeeDetailSettingScreenState
                             label: type.labelKo,
                             selected: _breakType == type,
                             expand: true,
-                            onTap: _saving
+                            onTap: (_saving || _saved)
                                 ? null
                                 : () => setState(() => _breakType = type),
                           ),
@@ -220,7 +227,7 @@ class _EmployeeDetailSettingScreenState
                     const SizedBox(height: 8),
                     AppOptionPickerField<int>(
                       title: '고정 휴게시간 선택',
-                      enabled: !_saving,
+                      enabled: !_saving && !_saved,
                       selected: _fixedBreakOptions.contains(_fixedBreak)
                           ? _fixedBreak
                           : 60,
@@ -251,7 +258,7 @@ class _EmployeeDetailSettingScreenState
                         '주휴수당이 발생할 수 있습니다. '
                         '(근무시간÷40)×8×시급으로 일할 반영',
                     value: _weekPay,
-                    onChanged: _saving
+                    onChanged: (_saving || _saved)
                         ? null
                         : (v) => setState(() => _weekPay = v),
                   ),
@@ -260,7 +267,7 @@ class _EmployeeDetailSettingScreenState
                     title: '야간수당 포함',
                     subtitle: '22시~06시 구간에 시급의 0.5배를 가산합니다.',
                     value: _nightPay,
-                    onChanged: _saving
+                    onChanged: (_saving || _saved)
                         ? null
                         : (v) => setState(() => _nightPay = v),
                   ),
@@ -269,7 +276,7 @@ class _EmployeeDetailSettingScreenState
                     title: '연장수당 포함',
                     subtitle: '1일 8시간 초과분에 시급의 0.5배를 가산합니다.',
                     value: _overtimePay,
-                    onChanged: _saving
+                    onChanged: (_saving || _saved)
                         ? null
                         : (v) => setState(() => _overtimePay = v),
                   ),
@@ -277,23 +284,13 @@ class _EmployeeDetailSettingScreenState
               ),
             ),
             const SizedBox(height: 28),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.buttonFill,
-                foregroundColor: AppColors.buttonOnFill,
-                minimumSize: const Size.fromHeight(48),
-              ),
-              child: _saving
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('저장'),
+            StickyActionButton(
+              label: '저장',
+              variant: StickyActionVariant.filled,
+              onPressed: (_saving || _saved) ? null : _save,
+              isLoading: _saving,
+              isCompleted: _saved,
+              completedLabel: '완료됨',
             ),
           ],
         ),

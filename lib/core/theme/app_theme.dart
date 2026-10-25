@@ -35,67 +35,80 @@ abstract final class AppTheme {
     },
   );
 
-  /// 주요 액션 — 블루 채움 + 흰 굵은 글씨 + 둥근 모서리
+  /// 주요 액션 — 검정 채움 + 흰 글씨 + 알약형 (StickyActionButton과 동일)
   static ButtonStyle get _filledCtaButton {
     return ButtonStyle(
       backgroundColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.disabled)) {
-          return AppColors.accentMuted;
+          return Colors.grey.shade300;
         }
-        return AppColors.buttonFill;
+        return Colors.black;
       }),
-      foregroundColor: const WidgetStatePropertyAll(AppColors.buttonOnFill),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return Colors.grey.shade600;
+        }
+        return Colors.white;
+      }),
       overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-      elevation: const WidgetStatePropertyAll(0),
-      shadowColor: WidgetStatePropertyAll(AppColors.shadowStrong),
+      elevation: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) return 0;
+        return 2;
+      }),
+      shadowColor: const WidgetStatePropertyAll(Color(0x0F000000)),
       surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
       padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       ),
-      minimumSize: const WidgetStatePropertyAll(Size(64, 48)),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
-        ),
-      ),
+      minimumSize: const WidgetStatePropertyAll(Size(64, 50)),
+      maximumSize: const WidgetStatePropertyAll(Size(double.infinity, 50)),
+      shape: const WidgetStatePropertyAll(StadiumBorder()),
       textStyle: const WidgetStatePropertyAll(
         TextStyle(
           fontFamily: _font,
-          fontSize: 15,
+          fontSize: 16,
           fontWeight: FontWeight.w700,
-          color: AppColors.buttonOnFill,
+          color: Colors.white,
         ),
       ),
     );
   }
 
-  /// 보조 — 흰 배경 + 블루 테두리
+  /// 보조 — 흰 배경 + 검정 글씨 + 그림자 입체감 (테두리 없음)
   static ButtonStyle get _outlineButton {
     return ButtonStyle(
-      backgroundColor: const WidgetStatePropertyAll(Colors.white),
-      foregroundColor: const WidgetStatePropertyAll(AppColors.primary),
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return Colors.grey.shade300;
+        }
+        return Colors.white;
+      }),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return Colors.grey.shade600;
+        }
+        return Colors.black;
+      }),
       overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-      elevation: const WidgetStatePropertyAll(0),
-      shadowColor: WidgetStatePropertyAll(AppColors.shadowStrong),
+      elevation: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) return 0;
+        return 2;
+      }),
+      shadowColor: const WidgetStatePropertyAll(Color(0x0F000000)),
       surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-      side: const WidgetStatePropertyAll(
-        BorderSide(color: AppColors.borderSubtle, width: 1.2),
-      ),
+      side: const WidgetStatePropertyAll(BorderSide.none),
       padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       ),
-      minimumSize: const WidgetStatePropertyAll(Size(64, 48)),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
-        ),
-      ),
+      minimumSize: const WidgetStatePropertyAll(Size(64, 50)),
+      maximumSize: const WidgetStatePropertyAll(Size(double.infinity, 50)),
+      shape: const WidgetStatePropertyAll(StadiumBorder()),
       textStyle: const WidgetStatePropertyAll(
         TextStyle(
           fontFamily: _font,
-          fontSize: 15,
+          fontSize: 16,
           fontWeight: FontWeight.w700,
-          color: AppColors.primary,
+          color: Colors.black,
         ),
       ),
     );
@@ -279,7 +292,7 @@ abstract final class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(style: _outlineButton),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: AppColors.primary,
+          foregroundColor: Colors.black,
           overlayColor: Colors.transparent,
           splashFactory: NoSplash.splashFactory,
           textStyle: const TextStyle(
@@ -300,14 +313,17 @@ abstract final class AppTheme {
         enableFeedback: false,
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.buttonFill,
-        foregroundColor: AppColors.buttonOnFill,
-        elevation: 2,
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        shape: StadiumBorder(),
       ),
       inputDecorationTheme: const InputDecorationTheme(
-        filled: false,
+        filled: true,
         fillColor: Colors.transparent,
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        isDense: false,
+        contentPadding: EdgeInsets.fromLTRB(16, 18, 16, 18),
+        floatingLabelBehavior: FloatingLabelBehavior.auto,
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
         focusedBorder: InputBorder.none,
@@ -316,9 +332,15 @@ abstract final class AppTheme {
         focusedErrorBorder: InputBorder.none,
         labelStyle: TextStyle(
           fontFamily: _font,
-          fontSize: 15,
+          fontSize: 14,
           fontWeight: FontWeight.w500,
-          color: AppColors.textPrimary,
+          color: AppColors.textSecondary,
+        ),
+        floatingLabelStyle: TextStyle(
+          fontFamily: _font,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primary,
         ),
         hintStyle: TextStyle(
           fontFamily: _font,
@@ -333,15 +355,16 @@ abstract final class AppTheme {
         space: 1,
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: AppColors.secondary,
+        backgroundColor: const Color(0xFF1A1A1A),
         contentTextStyle: theme.bodyLarge?.copyWith(
           color: Colors.white,
           fontWeight: FontWeight.w600,
         ),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppDecorations.radiusMd),
-        ),
+        elevation: 2,
+        shape: const StadiumBorder(),
+        // bottomNavigationBar(배너·탭) 바로 위 — showAppSnackBar와 동일
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       ),
       datePickerTheme: DatePickerThemeData(
         backgroundColor: white,

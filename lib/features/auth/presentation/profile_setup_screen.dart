@@ -203,38 +203,40 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                               ),
                             ),
                             const SizedBox(height: 28),
-                            TextFormField(
-                              controller: _nameController,
-                              focusNode: _nameFocus,
-                              enabled: !_saving,
-                              autofocus: true,
-                              textInputAction: TextInputAction.done,
-                              textCapitalization: TextCapitalization.none,
-                              keyboardType: TextInputType.text,
-                              autocorrect: AppTextInputDefaults.autocorrect,
-                              enableSuggestions:
-                                  AppTextInputDefaults.enableSuggestions,
-                              spellCheckConfiguration: AppTextInputDefaults
-                                  .spellCheckConfiguration,
-                              smartDashesType:
-                                  AppTextInputDefaults.smartDashesType,
-                              smartQuotesType:
-                                  AppTextInputDefaults.smartQuotesType,
-                              style: const TextStyle(
-                                decoration: TextDecoration.none,
-                              ),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.deny(
-                                  RegExp(r'\n'),
+                            AppElevatedInputShell(
+                              child: TextFormField(
+                                controller: _nameController,
+                                focusNode: _nameFocus,
+                                enabled: !_saving,
+                                autofocus: true,
+                                textInputAction: TextInputAction.done,
+                                textCapitalization: TextCapitalization.none,
+                                keyboardType: TextInputType.text,
+                                autocorrect: AppTextInputDefaults.autocorrect,
+                                enableSuggestions:
+                                    AppTextInputDefaults.enableSuggestions,
+                                spellCheckConfiguration: AppTextInputDefaults
+                                    .spellCheckConfiguration,
+                                smartDashesType:
+                                    AppTextInputDefaults.smartDashesType,
+                                smartQuotesType:
+                                    AppTextInputDefaults.smartQuotesType,
+                                style: const TextStyle(
+                                  decoration: TextDecoration.none,
                                 ),
-                                LengthLimitingTextInputFormatter(30),
-                              ],
-                              decoration: const InputDecoration(
-                                labelText: '실명',
-                                hintText: '예: 홍길동',
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.deny(
+                                    RegExp(r'\n'),
+                                  ),
+                                  LengthLimitingTextInputFormatter(30),
+                                ],
+                                decoration: AppTextInputDefaults.decoration(
+                                  labelText: '실명',
+                                  hintText: '예: 홍길동',
+                                ),
+                                validator: _validate,
+                                onFieldSubmitted: (_) => _submit(),
                               ),
-                              validator: _validate,
-                              onFieldSubmitted: (_) => _submit(),
                             ),
                             const SizedBox(height: 12),
                             Text(

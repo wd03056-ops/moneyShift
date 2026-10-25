@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/sticky_action_button.dart';
 
 /// 호스팅된 약관·개인정보 문서를 인앱 WebView로 표시
 class LegalWebScreen extends StatefulWidget {
@@ -80,7 +81,9 @@ class _LegalWebScreenState extends State<LegalWebScreen> {
                           ),
                     ),
                     const SizedBox(height: 16),
-                    FilledButton(
+                    StickyActionButton(
+                      label: '다시 시도',
+                      variant: StickyActionVariant.filled,
                       onPressed: () {
                         setState(() {
                           _failed = false;
@@ -88,7 +91,6 @@ class _LegalWebScreenState extends State<LegalWebScreen> {
                         });
                         _controller.loadRequest(Uri.parse(widget.url));
                       },
-                      child: const Text('다시 시도'),
                     ),
                   ],
                 ),

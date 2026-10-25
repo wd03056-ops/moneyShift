@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/time/kst_date_time.dart';
 import '../../../core/widgets/app_select_chip.dart';
+import '../../../core/widgets/app_text_input_defaults.dart';
+import '../../../core/widgets/sticky_action_button.dart';
 import '../../../mock/mock_store.dart';
 import '../../../models/enums/commute_correction_status.dart';
 import 'owner_commute_dashboard_screen.dart';
@@ -211,61 +213,48 @@ class _CommuteCorrectionSheetState extends State<CommuteCorrectionSheet> {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton(
+                    child: StickyActionButton(
+                      label: '출근 ${_clockIn?.format(context) ?? '-'}',
+                      variant: StickyActionVariant.primary,
                       onPressed: _submitting ? null : _pickIn,
-                      child: Text(
-                        '출근 ${_clockIn?.format(context) ?? '-'}',
-                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: OutlinedButton(
+                    child: StickyActionButton(
+                      label: '퇴근 ${_clockOut?.format(context) ?? '-'}',
+                      variant: StickyActionVariant.primary,
                       onPressed: _submitting ? null : _pickOut,
-                      child: Text(
-                        '퇴근 ${_clockOut?.format(context) ?? '-'}',
-                      ),
                     ),
                   ),
                 ],
               ),
             ],
             const SizedBox(height: 14),
-            TextField(
-              controller: _reasonCtrl,
-              enabled: !_submitting,
-              maxLines: 2,
-              maxLength: 120,
-              autocorrect: false,
-              enableSuggestions: false,
-              spellCheckConfiguration:
-                  const SpellCheckConfiguration.disabled(),
-              smartDashesType: SmartDashesType.disabled,
-              smartQuotesType: SmartQuotesType.disabled,
-              style: const TextStyle(decoration: TextDecoration.none),
-              decoration: const InputDecoration(
-                labelText: '수정 사유 (필수)',
-                border: OutlineInputBorder(),
+            AppElevatedInputShell(
+              child: TextField(
+                controller: _reasonCtrl,
+                enabled: !_submitting,
+                maxLines: 2,
+                maxLength: 120,
+                autocorrect: false,
+                enableSuggestions: false,
+                spellCheckConfiguration:
+                    const SpellCheckConfiguration.disabled(),
+                smartDashesType: SmartDashesType.disabled,
+                smartQuotesType: SmartQuotesType.disabled,
+                style: const TextStyle(decoration: TextDecoration.none),
+                decoration: AppTextInputDefaults.decoration(
+                  labelText: '수정 사유 (필수)',
+                ).copyWith(counterText: ''),
               ),
             ),
             const SizedBox(height: 12),
-            FilledButton(
+            StickyActionButton(
+              label: '수정 요청 보내기',
+              variant: StickyActionVariant.filled,
               onPressed: _submitting ? null : _submit,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.buttonFill,
-                foregroundColor: AppColors.buttonOnFill,
-                minimumSize: const Size.fromHeight(48),
-              ),
-              child: _submitting
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('수정 요청 보내기'),
+              isLoading: _submitting,
             ),
           ],
         ),
